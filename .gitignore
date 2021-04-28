@@ -2,7 +2,6 @@
 *.slxc
 *.prj
 
-**/ARCHIVE
 slprj/
 Literature/
 EXPORTS/
