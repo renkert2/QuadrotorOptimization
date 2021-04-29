@@ -61,9 +61,10 @@ classdef Optimization < handle
             obj.OptiVars = OV';
         end
 
-        function [X_opt_s, opt_flight_time, OO] = Optimize(obj,r, opts)
+        function [X_opt_s, fval, OO] = Optimize(obj, objective, r, opts)
             arguments
                 obj
+                objective OptimObjectives 
                 r = @(t) (t>0)
                 opts.SimulationBased = false
                 opts.DiffMinChange = 1e-4
@@ -71,6 +72,7 @@ classdef Optimization < handle
                 opts.OptimizationOpts cell = {}
                 opts.OptimizationOutput logical = true
                 opts.InitializeFromValue logical = false
+                opts.CaptureState logical = true
             end
             
             optimopts = optimoptions('fmincon', 'Algorithm', 'sqp');
@@ -91,10 +93,10 @@ classdef Optimization < handle
             ub = UB(obj.OptiVars);
             
             OO = OptimOutput();
+            OO.Objective = objective;
             [X_opt_s, fval, OO.exitflag, ~, OO.lambda, OO.grad, OO.hessian] = fmincon(@objfun ,x0, [], [], [], [], lb, ub, @nlcon, optimopts);
-            opt_flight_time = -fval;
-
-                       
+            OO.FVal = fval;
+         
             % Set Current Values to Optimal Value in OptiVars
             setVals(obj.OptiVars, X_opt_s);
             
@@ -102,13 +104,21 @@ classdef Optimization < handle
             obj.updateParamVals(XAll(obj.OptiVars));
             OO.X_opt = unscale(obj.OptiVars);
             
-            % Update QuadRotor's Flight Time to the optimal value
-            obj.QR.flight_time = opt_flight_time;  
-            OO.F_opt = opt_flight_time;
+            if opts.CaptureState
+                OO.PerformanceData = obj.QR.PerformanceData;
+                OO.DesignData = obj.QR.DesignData;
+            end
             
             function f = objfun(X_s)
                 X = XAll(obj.OptiVars,X_s); % Unscale and return all
-                f = -obj.flightTime(X,r,'SimulationBased', opts.SimulationBased, opts.FlightTimeOpts{:});
+                try
+                    obj.updateParamVals(X);
+                catch
+                    f = NaN;
+                    return
+                end
+                
+                f = -obj.flightTime(r,'SimulationBased', opts.SimulationBased, opts.FlightTimeOpts{:});
             end
             
             function [c,ceq] = nlcon(X_s)
@@ -122,10 +132,9 @@ classdef Optimization < handle
             end
         end
        
-        function ft = flightTime(obj,X,r,opts)
+        function ft = flightTime(obj,r,opts)
             arguments
                 obj
-                X
                 r = @(t) (t>0)
                 opts.SimulationBased = false
                 opts.RecomputeControlGains = true
@@ -134,18 +143,13 @@ classdef Optimization < handle
                 opts.ScalingFactor = 1500
                 opts.Timeout = 5
             end
-            try
-                obj.updateParamVals(X);
-                if opts.SimulationBased
-                    if opts.RecomputeControlGains
-                        obj.QR.calcControllerGains;
-                    end
-                    ft = obj.QR.flightTime(r,'SimulationBased',true, 'InterpolateTime', opts.InterpolateTime, 'Timeout', opts.Timeout);
-                else
-                    ft = obj.QR.flightTime('SimulationBased',false);
+            if opts.SimulationBased
+                if opts.RecomputeControlGains
+                    obj.QR.calcControllerGains;
                 end
-            catch
-                ft = NaN;
+                ft = obj.QR.flightTime(r,'SimulationBased',true, 'InterpolateTime', opts.InterpolateTime, 'Timeout', opts.Timeout);
+            else
+                ft = obj.QR.flightTime('SimulationBased',false);
             end
             
             if opts.Scaled
@@ -279,8 +283,8 @@ classdef Optimization < handle
             function [ft, pd, dd, oo] = optiWrapper()
                 try
                     [~,ft,oo] = obj.Optimize('OptimizationOutput', false, 'OptimizationOpts', {'Display', 'none'}, 'InitializeFromValue',opts.InitializeFromValue);
-                    pd = obj.QR.PerformanceData;
-                    dd = obj.QR.DesignData;
+                    pd = oo.PerformanceData;
+                    dd = oo.DesignData;
                 catch
                     ft = NaN;
                     oo = OptimOutput();
