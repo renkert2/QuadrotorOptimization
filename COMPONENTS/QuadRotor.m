@@ -697,32 +697,106 @@ classdef QuadRotor < System
                obj
                theta_0 double = []
                opts.DisplayWarnings = false
+               opts.SweepRange = false
+               opts.SweepPoints = 100
+               opts.Theta0Range = [-pi/2 0]
+               opts.MaxPitch = false
             end
             
-            theta_0_range = [-pi/2 0]; % Pitch angle can range from -90deg to 0deg
-            if isempty(theta_0)
-                [theta_0] = fminbnd(@(t) -calcRange(obj,t,false), theta_0_range(1),theta_0_range(2));
+            theta_0_range = opts.Theta0Range; % Pitch angle can range from -90deg to 0deg
+            
+            if ~opts.MaxPitch
+                if isempty(theta_0)
+                    [theta_0] = fminbnd(@(t) -calcRange(obj, t, "PitchAngle", false), theta_0_range(1),theta_0_range(2));
+                else
+                    assert(theta_0 >= theta_0_range(1) && theta_0 <= theta_0_range(2), "Pitch angle can range from -90deg to 0deg");
+                end
+                [range, speed, flight_time] = calcRange(obj, theta_0, "PitchAngle", opts.DisplayWarnings);
             else
-                assert(theta_0 >= theta_0_range(1) && theta_0 <= theta_0_range(2), "Pitch angle can range from -90deg to 0deg");
+                qrsmax = calcSteadyStateIO(obj, 1);
+                [range, speed, flight_time, theta_0] = calcRange(obj, qrsmax, "Thrust", opts.DisplayWarnings);
             end
-            [range, speed, flight_time] = calcRange(obj, theta_0, opts.DisplayWarnings);
+            if opts.SweepRange % Sweep Range
+                [nom_range, nom_speed, nom_flight_time] = deal(range, speed, flight_time);
+                
+                n = opts.SweepPoints;
+                range = zeros(1,n);
+                speed = zeros(1,n);
+                flight_time = zeros(1,n);
+                
+                x = linspace(theta_0_range(1), theta_0_range(2), n);
+                for i = 1:n
+                    [range(i), speed(i), flight_time(i)] = calcRange(obj, x(i), "PitchAngle", false);
+                end
+                speed(isnan(range)) = NaN;
+                
+                figure('Name', 'Range Sweep')
+                
+                subplot(3,1,1)
+                plot(x, range)
+                xlim(theta_0_range)
+                ylabel('Range (m)')
+                set(gca,'XTickLabel',[]);
+                hold on
+                plot(theta_0, nom_range, '.r', 'MarkerSize',20);
+                hold off
+                
+                subplot(3,1,2)
+                plot(x, speed)
+                xlim(theta_0_range)
+                ylabel('Speed (m/s)')
+                set(gca,'XTickLabel',[]);
+                hold on
+                plot(theta_0, nom_speed, '.r', 'MarkerSize',20);
+                hold off
+                
+                subplot(3,1,3)
+                plot(x, flight_time)
+                xlim(theta_0_range)
+                ylabel('Flight Time (s)')
+                xlabel('$$\theta_0$$ (rad)', 'Interpreter', 'latex')
+                hold on
+                plot(theta_0, nom_flight_time, '.r', 'MarkerSize',20);
+                hold off
+                
+                theta_0 = x;
+            end
             
-            function [range, speed, flight_time] = calcRange(obj, theta_0, warn_flag)
+            function [range, speed, flight_time, theta_0_] = calcRange(obj, arg1, mode, warn_flag)
                 T_hover = obj.HoverThrust(); % m*g
                 rho = obj.rho;
                 Cd = obj.DragCoefficient;
                 S = obj.ReferenceAreaVector();
-                u = [cos(theta_0); 0; sin(theta_0)]; % unit vector of relative velocity in the body frame
                 
-                speed = sqrt((-2*T_hover*tan(theta_0)) / (rho * Cd * abs(dot(S,u))));
-                T_trim = T_hover*sec(theta_0);
+                switch mode
+                    case "PitchAngle"
+                        qrstate_arg_flag = false;
+                        theta_0_ = arg1;
+                        T_trim = T_hover*sec(theta_0_);
+                    case "Thrust"
+                        qrstate_arg_flag = isa(arg1, 'QRState');
+                        if qrstate_arg_flag
+                            T_trim = arg1.TotalThrust;
+                        else
+                            T_trim = arg1;
+                        end
+                        theta_0_ = -abs(asec(T_trim/T_hover));
+                end
+                
+                u = [cos(theta_0_); 0; sin(theta_0_)]; % unit vector of relative velocity in the body frame
+                
+                speed = sqrt((-2*T_hover*tan(theta_0_)) / (rho * Cd * dot(S,abs(u))));
                 
                 try
-                    qrs = obj.calcSteadyState([], T_trim);
+                    if qrstate_arg_flag
+                        qrs = arg1;
+                    else
+                        qrs = obj.calcSteadyState([], T_trim);
+                    end
                     cap = obj.BattCap(); % A*s
                     ave_current = qrs.BusCurrent;
                     flight_time = cap/ave_current;
-
+                    
                     range = speed*flight_time;
                 catch ME
                     if warn_flag
