@@ -706,7 +706,8 @@ classdef QuadRotor < System
             
             if ~opts.MaxPitch
                 if isempty(theta_0)
-                    [theta_0] = fminbnd(@(t) -calcRange(obj, t, "PitchAngle", false), theta_0_range(1),theta_0_range(2));
+                    optimopts = optimoptions('fmincon', 'Display', 'none');
+                    [theta_0] = fmincon(@(t) -calcRange(obj, t, "PitchAngle", false), -0.1, [],[],[],[],theta_0_range(1),theta_0_range(2),[],optimopts);
                 else
                     assert(theta_0 >= theta_0_range(1) && theta_0 <= theta_0_range(2), "Pitch angle can range from -90deg to 0deg");
                 end

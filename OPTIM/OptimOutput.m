@@ -3,7 +3,7 @@ classdef OptimOutput
     %   Detailed explanation goes here
     
     properties
-        Objective OptimObjective
+        Objective OptimObjectives
         
         X_opt
         F_opt

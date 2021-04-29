@@ -44,24 +44,28 @@ classdef Optimization < handle
             OV(2).Unit = "m";
             OV(2).Parent = prop;
             
-            OV(3) = optiVar("N_p", 1, 0.1, 10);
-            OV(3).Description = "Parallel Cells";
+            OV(3) = optiVar("N_s", 6, 0.1, 12, 'Enabled', false); % Typically voltage is selected to highest possible value
+            OV(3).Description = "Series Cells";
             OV(3).Parent = batt;
             
-            OV(4) = optiVar("kV", obj.motorFit.Boundary.X_mean(1), obj.motorFit.Boundary.X_lb(1), obj.motorFit.Boundary.X_ub(1));
-            OV(4).Description = "Speed Constant";
-            OV(4).Unit = "RPM/V";
-            OV(4).Parent = motor;
+            OV(4) = optiVar("N_p", 1, 0.1, 20);
+            OV(4).Description = "Parallel Cells";
+            OV(4).Parent = batt;
             
-            OV(5) = optiVar("Rm", obj.motorFit.Boundary.X_mean(2), obj.motorFit.Boundary.X_lb(2), obj.motorFit.Boundary.X_ub(2));
-            OV(5).Description = "Phase Resistance";
-            OV(5).Unit = "Ohm";
+            OV(5) = optiVar("kV", obj.motorFit.Boundary.X_mean(1), obj.motorFit.Boundary.X_lb(1), obj.motorFit.Boundary.X_ub(1));
+            OV(5).Description = "Speed Constant";
+            OV(5).Unit = "RPM/V";
             OV(5).Parent = motor;
+            
+            OV(6) = optiVar("Rm", obj.motorFit.Boundary.X_mean(2), obj.motorFit.Boundary.X_lb(2), obj.motorFit.Boundary.X_ub(2));
+            OV(6).Description = "Phase Resistance";
+            OV(6).Unit = "Ohm";
+            OV(6).Parent = motor;
 
             obj.OptiVars = OV';
         end
 
-        function [X_opt_s, fval, OO] = Optimize(obj, objective, r, opts)
+        function [X_opt_s, F_opt, OO] = Optimize(obj, objective, r, opts)
             arguments
                 obj
                 objective OptimObjectives 
@@ -94,8 +98,8 @@ classdef Optimization < handle
             
             OO = OptimOutput();
             OO.Objective = objective;
-            [X_opt_s, fval, OO.exitflag, ~, OO.lambda, OO.grad, OO.hessian] = fmincon(@objfun ,x0, [], [], [], [], lb, ub, @nlcon, optimopts);
-            OO.FVal = fval;
+            [X_opt_s, F_opt, OO.exitflag, ~, OO.lambda, OO.grad, OO.hessian] = fmincon(@objfun ,x0, [], [], [], [], lb, ub, @nlcon, optimopts);
+            OO.F_opt = F_opt;
          
             % Set Current Values to Optimal Value in OptiVars
             setVals(obj.OptiVars, X_opt_s);
@@ -113,12 +117,16 @@ classdef Optimization < handle
                 X = XAll(obj.OptiVars,X_s); % Unscale and return all
                 try
                     obj.updateParamVals(X);
+                    switch objective
+                        case "FlightTime"
+                            f = -obj.flightTime(r,'SimulationBased', opts.SimulationBased, opts.FlightTimeOpts{:});
+                        case "Range"
+                            f = -obj.QR.Range();
+                    end
                 catch
                     f = NaN;
                     return
                 end
-                
-                f = -obj.flightTime(r,'SimulationBased', opts.SimulationBased, opts.FlightTimeOpts{:});
             end
             
             function [c,ceq] = nlcon(X_s)
@@ -308,8 +316,9 @@ classdef Optimization < handle
             [M_prop,J_prop] = calcMassProps(obj.propMassFit, D_prop);
                    
             %X_batt = [N_p; N_s]
-            X_batt = X(find(obj.OptiVars, ["N_p"]));
-            N_p_batt = X_batt(1);
+            X_batt = X(find(obj.OptiVars, ["N_s", "N_p"]));
+            N_s_batt = X_batt(1);
+            N_p_batt = X_batt(2);
             
             %X_motor = [kV; Rm]
             X_motor = X(find(obj.OptiVars, ["kV", "Rm"]));
@@ -333,6 +342,7 @@ classdef Optimization < handle
             
             % Battery
             QR.Battery.N_p.Value = N_p_batt;
+            QR.Battery.N_s.Value = N_s_batt;
             
             % Prop
             QR.Propeller.D.Value = D_prop;

@@ -12,6 +12,10 @@ classdef optiVar < compParam
         Scaled logical = true
     end
     
+    properties (Hidden)
+        EnabledDefault logical = true
+    end
+    
     methods 
         function obj = optiVar(sym_arg, x0, lb, ub, opts)
             arguments
@@ -40,6 +44,7 @@ classdef optiVar < compParam
             obj.ub = ub;
             
             obj.Enabled = opts.Enabled;
+            obj.EnabledDefault = opts.Enabled;
             
             if isempty(opts.ScaleFactor)
                 obj.scaleFactor = x0;
@@ -151,7 +156,7 @@ classdef optiVar < compParam
            for i = 1:numel(obj_array)
                obj = obj_array(i);
                obj.Value = obj.x0;
-               obj.Enabled = 1;
+               obj.Enabled = obj.EnabledDefault;
            end
         end
     end
