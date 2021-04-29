@@ -26,13 +26,13 @@ classdef QuadRotor < System
         
         % Drag Model Sym Quantities
         ReferenceAreaVector
-        
-        % Parameter-dependent properties
-        SS_QAve QRState % Steady State at average battery voltage 
     end
     
     properties
-        flight_time double % Expensive calculation is cached
+        % Expensive calculations are cached
+        SS_QAve QRState % Steady State at average battery voltage 
+        flight_time double 
+        range double 
     end
     
     % Easier Access to Components
@@ -112,8 +112,9 @@ classdef QuadRotor < System
         end
 
         function update(obj)
-            obj.SS_QAve = calcSteadyState(obj);
+            obj.SS_QAve = QRState.empty();
             obj.flight_time = [];
+            obj.range = [];
         end
         
         function setParamQuantities(obj)
@@ -685,8 +686,6 @@ classdef QuadRotor < System
                 ave_current = obj.SS_QAve.y(5);
                 flight_time = cap/ave_current;
             end
-            
-            obj.flight_time = flight_time;
         end
         
         function [range, speed, flight_time, theta_0] = Range(obj, theta_0, opts)
@@ -807,16 +806,40 @@ classdef QuadRotor < System
                 end
             end
         end
-        
+               
+        %% Export PerformanceData and Design Data
         function pd = get.PerformanceData(obj)
             pd = PerformanceData();
             pd.FlightTime = obj.flight_time;
+            pd.Range = obj.range;
             pd.ThrustRatio = calcThrustRatio(obj);
             pd.SteadyState = obj.SS_QAve;
         end
         
         function dd = get.DesignData(obj)
             dd = exportStruct(obj.Params);
+        end
+        
+        %% Get Methods for cached properties
+        function ss = get.SS_QAve(obj)
+            if isempty(obj.SS_QAve)
+                obj.SS_QAve = calcSteadyState(obj);
+            end
+            ss = obj.SS_QAve;
+        end
+        
+        function ft = get.flight_time(obj)
+            if isempty(obj.flight_time)
+                obj.flight_time = obj.flightTime();
+            end
+            ft = obj.flight_time;
+        end
+        
+        function r = get.range(obj)
+            if isempty(obj.range)
+                obj.range = obj.Range();
+            end
+            r = obj.range;
         end
     end
     

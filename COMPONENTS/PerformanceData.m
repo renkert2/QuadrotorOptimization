@@ -3,6 +3,7 @@ classdef PerformanceData
     %   Detailed explanation goes here
     properties
         FlightTime double
+        Range double
         ThrustRatio double
         SteadyState QRState
     end
