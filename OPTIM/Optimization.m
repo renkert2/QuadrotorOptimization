@@ -7,6 +7,8 @@ classdef Optimization < handle
         motorFit motorFit
         
         OptiVars (:,1) optiVar
+        
+        X_prev double 
     end
     
     methods
@@ -214,7 +216,7 @@ classdef Optimization < handle
             
             obj.OptiVars.reset();
             % Obtain baseline optimal point
-            [~,F_opt] = obj.Optimize(opts.Objective, 'OptimizationOutput', false, 'OptimizationOpts', {'Display', 'none'});
+            [~,F_opt] = Optimize(obj, opts.Objective, 'OptimizationOutput', false, 'OptimizationOpts', {'Display', 'none'});
             X_opt = vertcat(vars.Value);
             
             for i = 1:N_vars
@@ -244,7 +246,7 @@ classdef Optimization < handle
                        else
                            msg = sprintf("Point: %f F: NaN", X(i));
                        end
-                       disp(msg);
+                       disp(msg)
                    end
                    
                case 2
@@ -287,7 +289,7 @@ classdef Optimization < handle
                                F(j,i) = NaN;
                                msg = sprintf("Point: (%f, %f) F: Invalid Point", x(i), y(j));
                            end
-                           disp(msg);
+                           disp(msg)
                        end
                    end
                    [X(:,:,1), X(:,:,2)] = meshgrid(x,y);
@@ -311,7 +313,7 @@ classdef Optimization < handle
            
             function [F, pd, dd, oo] = optiWrapper()
                 try
-                    [~,F,oo] = obj.Optimize(opts.Objective, 'OptimizationOutput', false, 'OptimizationOpts', {'Display', 'none'}, 'InitializeFromValue',opts.InitializeFromValue);
+                    [~,F,oo] = Optimize(obj, opts.Objective, 'OptimizationOutput', false, 'OptimizationOpts', {'Display', 'none'}, 'InitializeFromValue',opts.InitializeFromValue);
                     pd = oo.PerformanceData;
                     dd = oo.DesignData;
                 catch
@@ -329,9 +331,10 @@ classdef Optimization < handle
         end
         
         function updateParamVals(obj,X)
-            persistent X_prev
-            
-            if ~isempty(X_prev) && all(X == X_prev)
+            if nargin == 1
+                X = vertcat(obj.OptiVars.Value);
+            end
+            if ~isempty(obj.X_prev) && all(X == obj.X_prev)
                 return % Only update the quadrotor if the design variables have changed value
             end
                 
@@ -388,7 +391,7 @@ classdef Optimization < handle
 
             obj.QR.update();
             obj.QR.SS_QAve = obj.QR.calcSteadyState();
-            X_prev = X;
+            obj.X_prev = X;
         end
     end
 end

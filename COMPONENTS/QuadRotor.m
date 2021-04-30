@@ -711,6 +711,7 @@ classdef QuadRotor < System
             
             if ~opts.MaxPitch
                 if isempty(theta_0)
+                    t_prev = []; % Used to prevent from evaluating f and ceq more than necessary
                     x0 = -0.1;
                     lb = theta_0_range(1);
                     ub = theta_0_range(2);
@@ -837,7 +838,7 @@ classdef QuadRotor < System
             end
             
             function [r,u] = calcRangeOptWrapper(t)
-                persistent t_prev r_prev u_prev
+                persistent r_prev u_prev
                 if ~isempty(t_prev) && t == t_prev
                     r = r_prev;
                     u = u_prev;
