@@ -7,6 +7,8 @@ classdef QuadRotor < System
         rho double = 1.205 % Air Density - kg/m^3
         Height double = 0.1 % Approximate Height of the quadrotor in m, used to estimate drag
         DragCoefficient double = 1.2
+        
+        ConstrainInput logical = true % Prevents calcSteadyState from returning a solution with u < 0 or u > 1
     end
     
     properties (SetAccess = private)
@@ -112,7 +114,7 @@ classdef QuadRotor < System
         end
 
         function update(obj)
-            obj.SS_QAve = QRState.empty();
+            obj.SS_QAve = calcSteadyState(obj);
             obj.flight_time = [];
             obj.range = [];
         end
@@ -297,10 +299,13 @@ classdef QuadRotor < System
             [x_sol, ~, exit_flag] = fsolve(@(x) obj.SteadyState_func(x,[q_bar;rotor_speed]), x0, opts.SolverOpts);
             if exit_flag <= 0
                 error('No solution found');
-            elseif x_sol(1) > 1
-                error('No valid solution.  Required input exceeds 1');
-            elseif x_sol(1) < 0
-                error('No valid solution.  Required input must be positive');
+            end
+            if obj.ConstrainInput
+                if x_sol(1) > 1
+                    error('No valid solution.  Required input exceeds 1');
+                elseif x_sol(1) < 0
+                    error('No valid solution.  Required input must be positive');
+                end
             end
             
             qrss = QRState();
@@ -706,8 +711,14 @@ classdef QuadRotor < System
             
             if ~opts.MaxPitch
                 if isempty(theta_0)
+                    x0 = -0.1;
+                    lb = theta_0_range(1);
+                    ub = theta_0_range(2);
                     optimopts = optimoptions('fmincon', 'Display', 'none');
-                    [theta_0] = fmincon(@(t) -calcRange(obj, t, "PitchAngle", false), -0.1, [],[],[],[],theta_0_range(1),theta_0_range(2),[],optimopts);
+                    con_in_cache = obj.ConstrainInput;
+                    obj.ConstrainInput = false;
+                    [theta_0] = fmincon(@objfun, x0, [],[],[],[],lb,ub,@nonlcon,optimopts);
+                    obj.ConstrainInput = con_in_cache;
                 else
                     assert(theta_0 >= theta_0_range(1) && theta_0 <= theta_0_range(2), "Pitch angle can range from -90deg to 0deg");
                 end
@@ -716,7 +727,59 @@ classdef QuadRotor < System
                 qrsmax = calcSteadyStateIO(obj, 1);
                 [range, speed, flight_time, theta_0] = calcRange(obj, qrsmax, "Thrust", opts.DisplayWarnings);
             end
+            
             if opts.SweepRange % Sweep Range
+                sweepRange();
+            end
+            
+            function [range, speed, flight_time, theta_0_, u] = calcRange(obj, arg1, mode, warn_flag)
+                T_hover = obj.HoverThrust(); % m*g
+                rho = obj.rho;
+                Cd = obj.DragCoefficient;
+                S = obj.ReferenceAreaVector();
+                
+                switch mode
+                    case "PitchAngle"
+                        qrstate_arg_flag = false;
+                        theta_0_ = arg1;
+                        T_trim = T_hover*sec(theta_0_);
+                    case "Thrust"
+                        qrstate_arg_flag = isa(arg1, 'QRState');
+                        if qrstate_arg_flag
+                            T_trim = arg1.TotalThrust;
+                        else
+                            T_trim = arg1;
+                        end
+                        theta_0_ = -abs(asec(T_trim/T_hover));
+                end
+                
+                u = [cos(theta_0_); 0; sin(theta_0_)]; % unit vector of relative velocity in the body frame
+                
+                speed = sqrt((-2*T_hover*tan(theta_0_)) / (rho * Cd * dot(S,abs(u))));
+                
+                try
+                    if qrstate_arg_flag
+                        qrs = arg1;
+                    else
+                        qrs = obj.calcSteadyState([], T_trim);
+                    end
+                    u = qrs.u;
+                    cap = obj.BattCap(); % A*s
+                    ave_current = qrs.BusCurrent;
+                    flight_time = cap/ave_current;
+                    
+                    range = speed*flight_time;
+                catch ME
+                    if warn_flag
+                        disp( getReport( ME, 'extended', 'hyperlinks', 'on' ) )
+                    end
+                    u = NaN;
+                    flight_time = NaN;
+                    range = NaN;
+                end
+            end
+            
+            function sweepRange()
                 [nom_range, nom_speed, nom_flight_time] = deal(range, speed, flight_time);
                 
                 n = opts.SweepPoints;
@@ -762,49 +825,29 @@ classdef QuadRotor < System
                 theta_0 = x;
             end
             
-            function [range, speed, flight_time, theta_0_] = calcRange(obj, arg1, mode, warn_flag)
-                T_hover = obj.HoverThrust(); % m*g
-                rho = obj.rho;
-                Cd = obj.DragCoefficient;
-                S = obj.ReferenceAreaVector();
-                
-                switch mode
-                    case "PitchAngle"
-                        qrstate_arg_flag = false;
-                        theta_0_ = arg1;
-                        T_trim = T_hover*sec(theta_0_);
-                    case "Thrust"
-                        qrstate_arg_flag = isa(arg1, 'QRState');
-                        if qrstate_arg_flag
-                            T_trim = arg1.TotalThrust;
-                        else
-                            T_trim = arg1;
-                        end
-                        theta_0_ = -abs(asec(T_trim/T_hover));
+            function f = objfun(t)
+                [r,~] = calcRangeOptWrapper(t);
+                f = -r;
+            end
+            
+            function [c,ceq] = nonlcon(t)
+                [~,u] = calcRangeOptWrapper(t);
+                c = u-1;
+                ceq = [];
+            end
+            
+            function [r,u] = calcRangeOptWrapper(t)
+                persistent t_prev r_prev u_prev
+                if ~isempty(t_prev) && t == t_prev
+                    r = r_prev;
+                    u = u_prev;
+                    return
                 end
                 
-                u = [cos(theta_0_); 0; sin(theta_0_)]; % unit vector of relative velocity in the body frame
-                
-                speed = sqrt((-2*T_hover*tan(theta_0_)) / (rho * Cd * dot(S,abs(u))));
-                
-                try
-                    if qrstate_arg_flag
-                        qrs = arg1;
-                    else
-                        qrs = obj.calcSteadyState([], T_trim);
-                    end
-                    cap = obj.BattCap(); % A*s
-                    ave_current = qrs.BusCurrent;
-                    flight_time = cap/ave_current;
-                    
-                    range = speed*flight_time;
-                catch ME
-                    if warn_flag
-                        disp( getReport( ME, 'extended', 'hyperlinks', 'on' ) )
-                    end
-                    flight_time = NaN;
-                    range = NaN;
-                end
+                [r,~,~,~,u] = calcRange(obj, t, "PitchAngle", false);
+                t_prev = t;
+                r_prev = r;
+                u_prev = u;
             end
         end
                

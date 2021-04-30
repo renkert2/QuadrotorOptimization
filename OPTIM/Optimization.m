@@ -72,7 +72,7 @@ classdef Optimization < handle
                 r = @(t) (t>0)
                 opts.SimulationBased = false
                 opts.DiffMinChange = 1e-4
-                opts.FlightTimeOpts cell = {}
+                opts.SimulationOpts cell = {'InterpolateTime', false, 'Timeout', 30} % Options pertaining to the simulation-based flight time calculation
                 opts.OptimizationOpts cell = {}
                 opts.OptimizationOutput logical = true
                 opts.InitializeFromValue logical = false
@@ -98,8 +98,15 @@ classdef Optimization < handle
             
             OO = OptimOutput();
             OO.Objective = objective;
-            [X_opt_s, F_opt, OO.exitflag, ~, OO.lambda, OO.grad, OO.hessian] = fmincon(@objfun ,x0, [], [], [], [], lb, ub, @nlcon, optimopts);
+            
+            qr_con_in_cache = obj.QR.ConstrainInput; % Save previous state of QR.ConstrainInput
+            obj.QR.ConstrainInput = false; % Hand input constraint to optimization solver
+            
+            [X_opt_s, f_opt, OO.exitflag, ~, OO.lambda, OO.grad, OO.hessian] = fmincon(@objfun ,x0, [], [], [], [], lb, ub, @nlcon, optimopts);
+            F_opt = processF(f_opt); % Transform objective function output to desired output
             OO.F_opt = F_opt;
+            
+            obj.QR.ConstrainInput = qr_con_in_cache; 
          
             % Set Current Values to Optimal Value in OptiVars
             setVals(obj.OptiVars, X_opt_s);
@@ -115,53 +122,62 @@ classdef Optimization < handle
             
             function f = objfun(X_s)
                 X = XAll(obj.OptiVars,X_s); % Unscale and return all
+                
                 try
                     obj.updateParamVals(X);
-                    switch objective
-                        case "FlightTime"
-                            f = -obj.flightTime(r,'SimulationBased', opts.SimulationBased, opts.FlightTimeOpts{:});
-                        case "Range"
-                            f = -obj.QR.Range();
-                    end
                 catch
                     f = NaN;
                     return
                 end
+                
+                switch objective
+                    case "FlightTime"
+                        f = -flightTime();
+                    case "Range"
+                        f = -obj.QR.Range();
+                end
+                % implement objective function scaling at some point
             end
             
             function [c,ceq] = nlcon(X_s)
-                X = XAll(obj.OptiVars,X_s); % Unscale and return all values
-                % Boundary Objectives
-                c_1 = distToBoundary(obj.propAeroFit.Boundary, X(find(obj.OptiVars, ["D", "P"])));
-                c_2 = distToBoundary(obj.motorFit.Boundary, X(find(obj.OptiVars, ["kV", "Rm"])));
-                
-                c = [c_1;c_2];
                 ceq = [];
-            end
-        end
-       
-        function ft = flightTime(obj,r,opts)
-            arguments
-                obj
-                r = @(t) (t>0)
-                opts.SimulationBased = false
-                opts.RecomputeControlGains = true
-                opts.InterpolateTime = false
-                opts.Scaled = false
-                opts.ScalingFactor = 1500
-                opts.Timeout = 5
-            end
-            if opts.SimulationBased
-                if opts.RecomputeControlGains
-                    obj.QR.calcControllerGains;
+                
+                X = XAll(obj.OptiVars,X_s); % Unscale and return all values
+                
+                try
+                    obj.updateParamVals(X);
+                catch
+                    c = NaN(3,1);
+                    return
                 end
-                ft = obj.QR.flightTime(r,'SimulationBased',true, 'InterpolateTime', opts.InterpolateTime, 'Timeout', opts.Timeout);
-            else
-                ft = obj.QR.flightTime('SimulationBased',false);
+                
+                % Boundary Objectives
+                c_prop = distToBoundary(obj.propAeroFit.Boundary, X(find(obj.OptiVars, ["D", "P"])));
+                c_motor = distToBoundary(obj.motorFit.Boundary, X(find(obj.OptiVars, ["kV", "Rm"])));
+                
+                % QR Dependent Objectives
+                c_input = obj.QR.SS_QAve.u - 1;
+                
+                c = [c_prop; c_motor; c_input];
             end
             
-            if opts.Scaled
-                ft = ft/opts.ScalingFactor;
+            function F = processF(f)
+                % Implement objective function scaling at some point              
+                switch objective
+                    case "FlightTime"
+                        F = -f;
+                    case "Range"
+                        F = -f;
+                end
+            end
+            
+            function ft = flightTime()
+                if opts.SimulationBased
+                    obj.QR.calcControllerGains;
+                    ft = obj.QR.flightTime(r,'SimulationBased',true, opts.FlightTimeOpts{:});
+                else
+                    ft = obj.QR.flightTime('SimulationBased',false);
+                end
             end
         end
         
@@ -169,7 +185,7 @@ classdef Optimization < handle
             % X is the vector of design variable values being swept across.
             % - 1xn for 1 design var and nxnx2 meshgrid for 2 design vars
             % ft is a vector or grid of flight times
-            % X_opt is the optimal design point, ft_opt is the optimal
+            % X_opt is the optimal design point, f_opt is the optimal
             % flight time
             % I are the indices 1xv or (i;j)xv corresponding to points where a
             % valid flight time was obtained. PD and DD are 1xv vectors of 
@@ -179,6 +195,7 @@ classdef Optimization < handle
                 obj
                 vars
                 n double
+                opts.Objective = "FlightTime"
                 opts.ConstraintFunction = []
                 opts.ReverseSearch logical = false
                 opts.InitializeFromValue logical = true
@@ -197,7 +214,7 @@ classdef Optimization < handle
             
             obj.OptiVars.reset();
             % Obtain baseline optimal point
-            [~,ft_opt] = obj.Optimize('OptimizationOutput', false, 'OptimizationOpts', {'Display', 'none'});
+            [~,F_opt] = obj.Optimize(opts.Objective, 'OptimizationOutput', false, 'OptimizationOpts', {'Display', 'none'});
             X_opt = vertcat(vars.Value);
             
             for i = 1:N_vars
@@ -213,17 +230,21 @@ classdef Optimization < handle
                        X = fliplr(X);
                    end
                    
-                   ft = NaN(size(X));
+                   F = NaN(size(X));
                    valid_cnt = 0;
                    for i = 1:numel(X)
                        vars.Value = X(i);
-                       [ft(i), pd, dd, OO(i)] = optiWrapper();
-                       if ~isnan(ft(i))
+                       [F(i), pd, dd, OO(i)] = optiWrapper();
+                       if ~isnan(F(i))
                            valid_cnt = valid_cnt + 1;
                            I(1,valid_cnt) = i;
                            PD(1,valid_cnt) = pd;
                            DD(1,valid_cnt) = dd;
+                           msg = sprintf("Point: %f F: %f", X(i), F(i));
+                       else
+                           msg = sprintf("Point: %f F: NaN", X(i));
                        end
+                       disp(msg);
                    end
                    
                case 2
@@ -239,7 +260,7 @@ classdef Optimization < handle
                        const_fun_flag = false;
                    end
          
-                   ft = NaN(numel(y), numel(x));
+                   F = NaN(numel(y), numel(x));
                    valid_cnt = 0;
                    for i = 1:numel(x)
                        for j = 1:numel(y)
@@ -252,21 +273,21 @@ classdef Optimization < handle
                            if is_valid
                                vars(1).Value = x(i);
                                vars(2).Value = y(j);
-                               [ft(j,i), pd, dd, OO(j,i)] = optiWrapper();
-                               if ~isnan(ft(j,i))
+                               [F(j,i), pd, dd, OO(j,i)] = optiWrapper();
+                               if ~isnan(F(j,i))
                                    valid_cnt = valid_cnt + 1;
                                    I(:,valid_cnt) = [j;i];
                                    PD(1,valid_cnt) = pd;
                                    DD(1,valid_cnt) = dd;
-                                   disp("Point: "+string([x(i);y(j)])+" Flight Time: "+string(ft(j,i)))
+                                   msg = sprintf("Point: (%f, %f) F: %f", x(i), y(j), F(j,i));
                                else
-                                   disp("Point: "+string([x(i);y(j)])+" Flight Time: NaN")
+                                   msg = sprintf("Point: (%f, %f) F: NaN", x(i), y(j));
                                end
                            else
-                               ft(j,i) = NaN;
-                               disp("Point: "+string([x(i);y(j)])+" Flight Time: Invalid Point")
+                               F(j,i) = NaN;
+                               msg = sprintf("Point: (%f, %f) F: Invalid Point", x(i), y(j));
                            end
-                           
+                           disp(msg);
                        end
                    end
                    [X(:,:,1), X(:,:,2)] = meshgrid(x,y);
@@ -277,9 +298,9 @@ classdef Optimization < handle
            so.Vars = vars;
            so.N_vars = N_vars;
            so.X = X;
-           so.F = ft;
+           so.F = F;
            so.X_opt = X_opt;
-           so.F_opt = ft_opt;
+           so.F_opt = F_opt;
            so.I = I;
            so.PD = PD;
            so.DD = DD;
@@ -288,13 +309,13 @@ classdef Optimization < handle
            % Clean Up
            obj.OptiVars.reset();
            
-            function [ft, pd, dd, oo] = optiWrapper()
+            function [F, pd, dd, oo] = optiWrapper()
                 try
-                    [~,ft,oo] = obj.Optimize('OptimizationOutput', false, 'OptimizationOpts', {'Display', 'none'}, 'InitializeFromValue',opts.InitializeFromValue);
+                    [~,F,oo] = obj.Optimize(opts.Objective, 'OptimizationOutput', false, 'OptimizationOpts', {'Display', 'none'}, 'InitializeFromValue',opts.InitializeFromValue);
                     pd = oo.PerformanceData;
                     dd = oo.DesignData;
                 catch
-                    ft = NaN;
+                    F = NaN;
                     oo = OptimOutput();
                     oo.exitflag = -4;
                     pd = NaN;
@@ -308,6 +329,12 @@ classdef Optimization < handle
         end
         
         function updateParamVals(obj,X)
+            persistent X_prev
+            
+            if ~isempty(X_prev) && all(X == X_prev)
+                return % Only update the quadrotor if the design variables have changed value
+            end
+                
             %X_prop = [D;P]
             X_prop = X(find(obj.OptiVars, ["D", "P"]));
             D_prop = X_prop(1);
@@ -360,6 +387,8 @@ classdef Optimization < handle
             QR.Motor.D.Value = D_motor;
 
             obj.QR.update();
+            obj.QR.SS_QAve = obj.QR.calcSteadyState();
+            X_prev = X;
         end
     end
 end

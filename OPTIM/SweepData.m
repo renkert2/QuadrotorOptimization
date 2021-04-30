@@ -5,6 +5,7 @@ classdef SweepData
     properties
         Vars optiVar % Design Variables being swept
         N_vars double % number of design variables
+        
         X
         F % Primary objective function value
         
