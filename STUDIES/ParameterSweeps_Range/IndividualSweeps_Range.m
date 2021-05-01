@@ -8,8 +8,13 @@ for i = 1:numel(ov)
         rev_flag = false;
     end
     
-    individualSweeps_Range(i) = sweep(o, v, 100, 'Objective', 'Range', 'ReverseSearch', rev_flag);
+    individualSweeps_Range(i) = sweep(o, v, 50, 'Objective', 'Range', 'ReverseSearch', rev_flag);
 end
 
 save('individualSweeps_Range.mat', 'individualSweeps_Range');
+
+%%
+for i = 1:1
+individualSweeps_Range(i).plotObjective()
+end
 

@@ -39,9 +39,9 @@ classdef SweepData
             xlabel(latex(obj.Vars(1)), 'Interpreter', 'latex')
             if obj.N_vars == 2
                 ylabel(latex(obj.Vars(2)), 'Interpreter', 'latex')
-                zlabel('Objective', 'Interpreter', 'latex')
+                zlabel(string(obj.OO(1).Objective), 'Interpreter', 'latex')
             else
-                ylabel('Objective', 'Interpreter', 'latex')
+                ylabel(string(obj.OO(1).Objective), 'Interpreter', 'latex')
             end
         end
         
