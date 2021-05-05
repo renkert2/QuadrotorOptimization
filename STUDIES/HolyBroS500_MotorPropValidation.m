@@ -32,24 +32,16 @@ rotor_speed = [6015;6620;7113;7563;8545;9442;10464]*u.revolutionPerMinute/(u.rad
 
 t_exp = table(throttle, torque, thrust, current, rotor_speed, 'VariableNames', ["Throttle", "Torque", "Thrust", "Current", "RotorSpeed"]);
     
+%%
+plot(t_model.RotorSpeed, t_model.Current)
+hold on
+plot(t_exp.RotorSpeed, t_exp.Current)
 
 %% Plots
-
-% Speed vs Current
 figure
-plot(t_model.Current, t_model.RotorSpeed, '-b')
-hold on
-plot(t_exp.Current, t_exp.RotorSpeed, '.r');
-hold off
-title("Rotor Speed vs Current")
-xlabel("$$I$$ (A)", 'Interpreter', 'latex')
-ylabel("$$\omega$$ (rads/s)", 'Interpreter', 'latex')
-legend(["Predicted", "Measured"]);
 
-
-%%
 % Thrust
-figure
+subplot(2,2,1)
 plot(t_model.RotorSpeed, t_model.Thrust, '-b')
 hold on
 plot(t_exp.RotorSpeed, t_exp.Thrust, '.r');
@@ -60,7 +52,7 @@ ylabel("$$T$$ (N)", 'Interpreter', 'latex')
 legend(["Predicted", "Measured"]);
 
 % Torque
-figure
+subplot(2,2,3)
 plot(t_model.RotorSpeed, t_model.Torque, '-b')
 hold on
 plot(t_exp.RotorSpeed, t_exp.Torque, '.r');
@@ -70,9 +62,8 @@ xlabel("$$\omega$$ (rads/s)", 'Interpreter', 'latex')
 ylabel("$$ \tau $$ (N*m)", 'Interpreter', 'latex')
 legend(["Predicted", "Measured"]);
 
-%%
 % Torque vs Current
-figure
+subplot(2,2,2)
 plot(t_model.Current, t_model.Torque, '-b')
 hold on
 plot(t_exp.Current, t_exp.Torque, '.r');
@@ -82,14 +73,14 @@ xlabel("$$I$$ (A)", 'Interpreter', 'latex')
 ylabel("$$ \tau $$ (N*m)", 'Interpreter', 'latex')
 legend(["Predicted", "Measured"]);
 
-%%
-% Speed vs Torque
-figure
-plot(t_model.Torque, t_model.RotorSpeed, '-b')
+
+% Speed vs Current
+subplot(2,2,4)
+plot(t_model.Current, t_model.RotorSpeed, '-b')
 hold on
-plot(t_exp.Torque, t_exp.RotorSpeed, '.r');
+plot(t_exp.Current, t_exp.RotorSpeed, '.r');
 hold off
-title("Rotor Speed vs Torque")
-xlabel("$$\tau$$ (N*m)", 'Interpreter', 'latex')
+title("Rotor Speed vs Current")
+xlabel("$$I$$ (A)", 'Interpreter', 'latex')
 ylabel("$$\omega$$ (rads/s)", 'Interpreter', 'latex')
 legend(["Predicted", "Measured"]);
