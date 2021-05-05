@@ -13,5 +13,23 @@ motorprop_mass = arf_mass - bare_frame_mass - esc_mass;
 frame_mass = system_mass - motorprop_mass;
 
 QR_S500.Frame.Mass.Value = frame_mass;
+QR_S500.setParams(); % Frame mass isn't tunable, requires reinitialization of system
+QR_S500.init_post();
 
+%% Battery
+% - Recommended: 4S, 5000 mAh
 
+%% Motor
+kV = 880; % RPM / V
+Rm = 0.108; % Estimate https://www.rcmoment.com/p-rm6909.html
+
+% Estimate parameters from surrogate models
+
+% Actual Mass: 0.039 kg
+%% Propeller
+D = 10*(u.in/u.m);
+P = 4.5*(u.in/u.m);
+
+% Estimate prop params and update tunable params of the prop
+
+% Actual mass: 0.055/4 kg
