@@ -1,3 +1,5 @@
+frame = Frame('Name', 'Frame', 'Mass', extrinsicProp("Mass", 0.284 - 0.080 - 4*0.008 - 4*0.04, 'AutoRename', true, 'Tunable', true, 'Unit', "kg"));
+
 batt = Battery('Name', 'Battery',...
     'N_p', compParam('N_p',1,'AutoRename', true, 'Tunable', true),...
     'N_s', compParam('N_s',6, 'AutoRename', true, 'Tunable', true)); % 4000mAh, 6S Default Battery, No Dynamics
@@ -17,6 +19,6 @@ motor = PMSMMotor('Name','Motor',...
     'kV', compParam('kV', 900, 'AutoRename', true, 'Tunable', true, 'Unit', "RPM/V"),...
     'Rm', compParam('Rm',0.117, 'AutoRename', true, 'Tunable', true, 'Unit', "Ohm"));
 %%
-QROpt = QuadRotor('Battery', batt, 'Propeller', prop, 'PMSMMotor', motor);
+QROpt = QuadRotor('Frame', frame, 'Battery', batt, 'Propeller', prop, 'PMSMMotor', motor);
 %%
 save QROpt.mat QROpt

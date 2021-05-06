@@ -66,6 +66,18 @@ classdef Optimization < handle
 
             obj.OptiVars = OV';
         end
+        
+        function initializeFromQR(obj)
+            ov = obj.OptiVars;
+            qr = obj.QR;
+            ov(1).x0 = qr.Propeller.D.Value;
+            ov(2).x0 = qr.Propeller.P.Value;
+            ov(3).x0 = qr.Battery.N_s.Value;
+            ov(4).x0 = qr.Battery.N_p.Value;
+            ov(5).x0 = qr.Motor.kV.Value;
+            ov(6).x0 = qr.Motor.Rm.Value;
+            ov.reset()
+        end
 
         function [X_opt_s, F_opt, OO] = Optimize(obj, objective, r, opts)
             arguments
@@ -104,7 +116,7 @@ classdef Optimization < handle
             qr_con_in_cache = obj.QR.ConstrainInput; % Save previous state of QR.ConstrainInput
             obj.QR.ConstrainInput = false; % Hand input constraint to optimization solver
             
-            [X_opt_s, f_opt, OO.exitflag, ~, OO.lambda, OO.grad, OO.hessian] = fmincon(@objfun ,x0, [], [], [], [], lb, ub, @nlcon, optimopts);
+            [X_opt_s, f_opt, OO.exitflag, ~, OO.lambda, OO.grad, OO.hessian] = fmincon(@objfun ,x0, [], [], [], [], lb, ub, @(X_s) nlcon(X_s), optimopts);
             F_opt = processF(f_opt); % Transform objective function output to desired output
             OO.F_opt = F_opt;
             
@@ -124,7 +136,7 @@ classdef Optimization < handle
             
             function f = objfun(X_s)
                 X = XAll(obj.OptiVars,X_s); % Unscale and return all
-                
+               
                 try
                     obj.updateParamVals(X);
                 catch
@@ -143,22 +155,19 @@ classdef Optimization < handle
             
             function [c,ceq] = nlcon(X_s)
                 ceq = [];
-                
                 X = XAll(obj.OptiVars,X_s); % Unscale and return all values
                 
                 try
                     obj.updateParamVals(X);
+                    % QR Dependent Objectives
+                    c_input = obj.QR.SS_QAve.u - 1;
                 catch
-                    c = NaN(3,1);
-                    return
+                    c_input = NaN;
                 end
                 
                 % Boundary Objectives
                 c_prop = distToBoundary(obj.propAeroFit.Boundary, X(find(obj.OptiVars, ["D", "P"])));
                 c_motor = distToBoundary(obj.motorFit.Boundary, X(find(obj.OptiVars, ["kV", "Rm"])));
-                
-                % QR Dependent Objectives
-                c_input = obj.QR.SS_QAve.u - 1;
                 
                 c = [c_prop; c_motor; c_input];
             end

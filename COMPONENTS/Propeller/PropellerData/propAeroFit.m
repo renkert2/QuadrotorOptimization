@@ -108,9 +108,14 @@ classdef propAeroFit < handle
             k_T = max(min(k_T, ct_range(2)),ct_range(1));
         end
         
-        function plot(obj)
+        function plot(obj, D,P)
             figure(1)
             plot(obj.Fit.ct, [obj.Data.Diameter, obj.Data.Pitch], obj.Data.ct)
+            if nargin == 3
+                hold on
+                plot3(D, P, obj.Fit.ct(D,P),'.r','MarkerSize',20)
+                hold off
+            end
             zlim([0 max(obj.Data.ct)])
             title('Propeller Thrust Coefficient')
             xlabel('Diameter (m)')
@@ -120,6 +125,11 @@ classdef propAeroFit < handle
             
             figure(2)
             plot(obj.Fit.cp, [obj.Data.Diameter, obj.Data.Pitch], obj.Data.cp)
+            if nargin == 3
+                hold on
+                plot3(D, P, obj.Fit.cp(D,P),'.r','MarkerSize',20)
+                hold off
+            end
             zlim([0 max(obj.Data.cp)])
             title('Propeller Power Coefficient')
             xlabel('Diameter (m)')

@@ -46,9 +46,7 @@ classdef optiVar < compParam
             obj.Enabled = opts.Enabled;
             obj.EnabledDefault = opts.Enabled;
             
-            if isempty(opts.ScaleFactor)
-                obj.scaleFactor = x0;
-            else
+            if ~isempty(opts.ScaleFactor)
                 obj.scaleFactor = opts.ScaleFactor;
             end
             
@@ -118,7 +116,15 @@ classdef optiVar < compParam
             x0 = vertcat(obj.x0);
             pc = (val-x0)./x0;
             pcs = compose("%0.2f %%", 100*pc);
-        end        
+        end  
+        
+        function sf = get.scaleFactor(obj)
+            if isempty(obj.scaleFactor)
+                sf = obj.x0;
+            else
+                sf = obj.scaleFactor;
+            end
+        end
     end
     
     methods (Hidden)

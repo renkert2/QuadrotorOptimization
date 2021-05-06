@@ -43,14 +43,12 @@ classdef Propeller < Component
             stc = obj.convCoeffToRadPerSec(stc); % rad/s
         end
         
-        function k_Q = setTorqueCoeff(obj, lumped_torque_coeff)
+        function k_Q = lumpedToTorqueCoeff(obj, lumped_torque_coeff)
             k_Q = lumped_torque_coeff/(obj.rho*obj.D.^5); % rev/s
-            obj.k_Q = k_Q; % rev/s
         end
         
-        function k_T = setThrustCoeff(obj, lumped_thrust_coeff)
+        function k_T = lumpedToThrustCoeff(obj, lumped_thrust_coeff)
             k_T = lumped_thrust_coeff/(obj.rho*obj.D.^4); % rev/s
-            obj.k_T = k_T; % rev/s
         end
         
         function thrust = calcThrust(obj, speed)
@@ -74,6 +72,15 @@ classdef Propeller < Component
             % Thrust = k_rev_per_s * w^2 = k_rad_per_s * (w')^2
             
             k_rad_per_s = k_rev_per_s / (2*pi)^2;
+        end
+        
+        function k_rev_per_s = convCoeffToRevPerS(k_rad_per_s)
+            % Converts lumped coefficients of speed^2 term from rev/s to rad/s
+            % w' = speed in rad/s
+            % w = speed in rev/s
+            % Thrust = k_rev_per_s * w^2 = k_rad_per_s * (w')^2
+            
+            k_rev_per_s = k_rad_per_s * (2*pi)^2;
         end
     end
     

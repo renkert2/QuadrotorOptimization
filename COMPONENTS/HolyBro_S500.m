@@ -15,8 +15,6 @@ motor_mass = 0.0639;
 frame_mass = system_mass - motorprop_mass;
 
 QR_S500.Frame.Mass.Value = frame_mass;
-QR_S500.setParams(); % Frame mass isn't tunable, requires reinitialization of system
-QR_S500.init_post();
 
 %% Battery
 % - Recommended: 4S, 5000 mAh
