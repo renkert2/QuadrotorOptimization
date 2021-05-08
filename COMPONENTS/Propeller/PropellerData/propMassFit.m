@@ -26,6 +26,17 @@ classdef propMassFit
         function l = isInBoundary(obj,D)
             l = (D >= obj.lb) & (D <= obj.ub);
         end
+        
+        function plot(obj)
+            plot(obj.Fit)
+            hold on
+            d = obj.Data.Diameter_m;
+            w = obj.Data.Weight_kg;
+            plot(d,w,'.r')
+            hold off
+        end
+            
+            
     end
 end
 

@@ -21,6 +21,7 @@ classdef Battery < Component
     properties (Dependent)
         Energy % Joules
         Capacity % Coulombs = 1 A*s
+        PackResistance % Ohms
         V_OCV_pack
     end
     
@@ -38,6 +39,10 @@ classdef Battery < Component
         
         function C = get.Capacity(obj)
             C = obj.Q*obj.N_p;
+        end
+        
+        function R = get.PackResistance(obj)
+            R = obj.N_s/obj.N_p*obj.R_s;
         end
         
         function V = get.V_OCV_pack(obj)
@@ -105,7 +110,7 @@ classdef Battery < Component
             
             % Edges
             Edge(1) = GraphEdge_Internal('PowerFlow',P(1),'Coefficient',obj.N_s*obj.V_OCV_nominal,'TailVertex',Vertex(1),'HeadVertex',Vertex(2));
-            Edge(2) = GraphEdge_Internal('PowerFlow',P(2),'Coefficient',obj.N_s/obj.N_p*obj.R_s,'TailVertex',Vertex(2),'HeadVertex',Vertex(3));
+            Edge(2) = GraphEdge_Internal('PowerFlow',P(2),'Coefficient',obj.PackResistance,'TailVertex',Vertex(2),'HeadVertex',Vertex(3));
             
             g = Graph(Vertex, Edge);
             obj.Graph = g;

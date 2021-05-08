@@ -52,11 +52,18 @@ classdef Boundary
             x2_vals = linspace(obj.X_lb(2), obj.X_ub(2), res);
         end
         
-        function plot(obj)
+        function plot(obj, x1, x2)
             scatter(obj.Data(:,1), obj.Data(:,2))
             hold on
             plot(obj.BoundaryPoints(:,1), obj.BoundaryPoints(:,2))
             hold off
+            
+            if nargin == 3
+                hold on
+                plot(x1,x2, '.r', 'MarkerSize', 20)
+                hold off
+            end
+            
             
             title("Boundary")
             xlabel('X_1')

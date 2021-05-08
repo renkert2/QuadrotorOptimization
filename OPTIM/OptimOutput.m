@@ -3,6 +3,8 @@ classdef OptimOutput
     %   Detailed explanation goes here
     
     properties
+        Objective OptimObjectives
+        
         X_opt
         F_opt
         
@@ -10,6 +12,9 @@ classdef OptimOutput
         lambda
         grad
         hessian
+        
+        PerformanceData 
+        DesignData
     end
     
     methods
