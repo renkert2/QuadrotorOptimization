@@ -3,8 +3,8 @@ classdef Propeller < Component
     %   Detailed explanation goes here
     
     properties
-        M {mustBeParam} = extrinsicProp('Mass', 0.008, 'AutoRename',true,'Tunable',true, 'Unit', "kg")
-        J {mustBeParam} = compParam('J', 2.1075e-05, 'AutoRename', true, 'Tunable',true, 'Unit', "kg*m^2") % Rotational Inertia - kg*m^2 from "Stabilization and Control of Unmanned Quadcopter (Jiinec)
+        M {mustBeParam} = extrinsicProp('Mass', 0.008, 'Unit', "kg")
+        J {mustBeParam} = compParam('J', 2.1075e-05,'Unit', "kg*m^2") % Rotational Inertia - kg*m^2 from "Stabilization and Control of Unmanned Quadcopter (Jiinec)
         % k_Q and k_T Parameters from: 
         % Illinois Volume 2 Data
         % Static Test for C_t and C_p 
@@ -12,10 +12,10 @@ classdef Propeller < Component
         % - https://m-selig.ae.illinois.edu/props/volume-2/data/da4002_5x2.65_static_1126rd.txt
         
         % Nominal Parameters from "magf_7x4" in propStruct
-        k_P {mustBeParam} = compParam('k_P',  0.0411, 'AutoRename', true, 'Tunable', true) % Power coefficient - k_P = 2*pi*k_Q, speed in rev/s
-        k_T {mustBeParam} = compParam('k_T', 0.0819, 'AutoRename', true, 'Tunable', true) % Thrust coefficient - N/(s^2*kg*m^2), speed in rev/s.
-        D {mustBeParam} = compParam('D', 0.1780, 'AutoRename', true, 'Tunable', true, 'Unit', "m") % Propeller Diameter - m
-        P {mustBeParam} =  compParam('P', 0.0673, 'AutoRename', true, 'Tunable', true, 'Unit', "m") % Propeller Pitch - m
+        k_P {mustBeParam} = compParam('k_P',  0.0411) % Power coefficient - k_P = 2*pi*k_Q, speed in rev/s
+        k_T {mustBeParam} = compParam('k_T', 0.0819) % Thrust coefficient - N/(s^2*kg*m^2), speed in rev/s.
+        D {mustBeParam} = compParam('D', 0.1780, 'Unit', "m") % Propeller Diameter - m
+        P {mustBeParam} =  compParam('P', 0.0673, 'Unit', "m") % Propeller Pitch - m
         
         rho {mustBeParam} = 1.205 % Air Density - kg/m^3
     end

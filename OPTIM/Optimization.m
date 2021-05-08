@@ -48,12 +48,6 @@ classdef Optimization < handle
             OV(3).Description = "Parallel Cells";
             OV(3).Parent = batt;
             
-%             OV(4) = optiVar("N_s", 3, 1, 12);
-%             OV(4).Description = "Series Cells";
-%             OV(4).Parent = batt;
-%             OV(4).Value = 6;
-%             OV(4).Enabled = false; % Higher voltages are always best
-            
             OV(4) = optiVar("kV", obj.motorFit.Boundary.X_mean(1), obj.motorFit.Boundary.X_lb(1), obj.motorFit.Boundary.X_ub(1));
             OV(4).Description = "Speed Constant";
             OV(4).Unit = "RPM/V";

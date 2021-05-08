@@ -1,18 +1,18 @@
 classdef PMSMMotor < Component
     %PMSM Motor
-    %   Default parameters from Ferry 2017 - 'Quadcopter Plant Model and Control System Development With MATLAB/Simulink Implementation'
+    %   Default parameters need updated
     
     properties
-        L {mustBeParam} = 1.17e-4 % Inductance - H
-        J {mustBeParam} = compParam('J', 6.5e-6, 'AutoRename', true, 'Tunable', true, 'Unit', "kg*m^2") % Mechanical rotational inertia - Modified to better reflect Ferry's simulation results
-        kV {mustBeParam} = compParam('kV', 900, 'AutoRename', true, 'Tunable', true, 'Unit', "RPM/V") % Torque/Speed Coefficient - Nm/A = Vs/rad
-        Rm {mustBeParam} = compParam('Rm',0.117, 'AutoRename', true, 'Tunable', true, 'Unit', "Ohm") % Phase Resistance - Ohms
+        L {mustBeParam} = compParam('L', 1.17e-4, 'Unit', "H") % Inductance - H
+        J {mustBeParam} = compParam('J', 6.5e-6,'Unit', "kg*m^2") % Mechanical rotational inertia - Modified to better reflect Ferry's simulation results
+        kV {mustBeParam} = compParam('kV', 900,'Unit', "RPM/V") % Torque/Speed Coefficient - Nm/A = Vs/rad
+        Rm {mustBeParam} = compParam('Rm',0.117, 'Unit', "Ohm") % Phase Resistance - Ohms
         B_v {mustBeParam} = 0 % Viscous Friction - N*m*s
         T_c {mustBeParam} = 0 % Coulomb Friction
         sigmoid_a_param {mustBeParam} = 10 % Parameter used to approximate sign function with sigmoid function sig(w) = 2/(1+Exp(-a*w))-1
         
-        M {mustBeParam} = extrinsicProp('Mass',0.04, 'AutoRename', true, 'Tunable', true, 'Unit', "kg");
-        D {mustBeParam} = compParam('D', 0.05, 'AutoRename', true, 'Tunable', true, 'Unit', "m")
+        M {mustBeParam} = extrinsicProp('Mass',0.04, 'Unit', "kg");
+        D {mustBeParam} = compParam('D', 0.05, 'Unit', "m");
     end
     
     properties (Dependent)
