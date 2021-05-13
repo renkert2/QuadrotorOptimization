@@ -6,21 +6,21 @@ classdef Battery < Component
     % All parameters specified per cell except for N_series and N_parallel
     
     properties
-        N_p {mustBeParam} = compParam('N_p', 1) % Number of cells in parallel
-        N_s {mustBeParam} = compParam('N_s', 3) % Number of cells in series
-        Q {mustBeParam} = compParam('Q', 14400) % Coulombs
-        R_s {mustBeParam} = compParam('R_s', (10e-3) / 3) % Series Resistance - Ohms - From Turnigy Website
-        
-        Mass {mustBeParam} = extrinsicProp("Mass", NaN); % Dependent param defined in init
+        % Independent Params
+        N_p compParam = compParam('N_p', 1) % Number of cells in parallel
+        N_s compParam = compParam('N_s', 3) % Number of cells in series
+        Q compParam = compParam('Q', 4000) % mAh
+    
+        % Dependent Params
+        R_s compParam = compParam('R_s', (10e-3) / 3) % Series Resistance - Ohms - From Turnigy Website
+        Mass compParam = extrinsicProp("Mass", NaN); % Dependent param defined in init
         
         variableV_OCV logical = true
-        V_OCV_nominal {mustBeParam} = 3.7 %Nominal Open Circuit Voltage = V_OCV_nominal*V_OCV_curve(q)
+        V_OCV_nominal double = 3.7 %Nominal Open Circuit Voltage = V_OCV_nominal*V_OCV_curve(q)
         V_OCV_curve = symfun(1, sym('q')) % Protected in set method
     end
         
     properties (Dependent)
-        Energy % Joules
-        Capacity % Coulombs = 1 A*s
         PackResistance % Ohms
         V_OCV_pack
     end
@@ -33,14 +33,6 @@ classdef Battery < Component
     end
     
     methods
-        function E = get.Energy(obj)
-            E = obj.N_s*obj.N_p*obj.Q*obj.V_OCV_nominal;
-        end
-        
-        function C = get.Capacity(obj)
-            C = obj.Q*obj.N_p;
-        end
-        
         function R = get.PackResistance(obj)
             R = obj.N_s/obj.N_p*obj.R_s;
         end
@@ -87,6 +79,7 @@ classdef Battery < Component
             
             
             obj.Mass.setDependency(@Battery.calcMass, [obj.N_p; obj.N_s]);
+            obj.R_s.setDependency();
         end
     end
     
@@ -101,14 +94,16 @@ classdef Battery < Component
             P(2) = Type_PowerFlow("xt^2");
             
             % Vertices
-            Vertex(1) = GraphVertex_Internal('Description', "Battery SOC", 'Capacitance', C(1), 'Coefficient', obj.N_s*obj.N_p*obj.Q*obj.V_OCV_nominal, 'Initial', 1, 'VertexType','Abstract');
+            energy_coeff = obj.N_s*obj.N_p*Battery.mAhToCoulombs(obj.Q)*obj.V_OCV_nominal;
+            Vertex(1) = GraphVertex_Internal('Description', "Battery SOC", 'Capacitance', C(1), 'Coefficient', energy_coeff, 'Initial', 1, 'VertexType','Abstract');
             Vertex(2) = GraphVertex_External('Description', "Load Current", 'VertexType', 'Current');
             Vertex(3) = GraphVertex_External('Description', "Heat Sink", 'VertexType', 'Temperature');
             
             % Inputs
             
             % Edges
-            Edge(1) = GraphEdge_Internal('PowerFlow',P(1),'Coefficient',obj.N_s*obj.V_OCV_nominal,'TailVertex',Vertex(1),'HeadVertex',Vertex(2));
+            voltage_coeff = obj.N_s*obj.V_OCV_nominal;
+            Edge(1) = GraphEdge_Internal('PowerFlow',P(1),'Coefficient',voltage_coeff,'TailVertex',Vertex(1),'HeadVertex',Vertex(2));
             Edge(2) = GraphEdge_Internal('PowerFlow',P(2),'Coefficient',obj.PackResistance,'TailVertex',Vertex(2),'HeadVertex',Vertex(3));
             
             g = Graph(Vertex, Edge);
@@ -142,7 +137,11 @@ classdef Battery < Component
         end
         
         function mah = CoulombsTomAh(c)
-            mah = 0.2778*c;
+            mah = c/3.6;
+        end
+        
+        function c = mAhToCoulombs(mAh)
+            c = 3.6*mAh;
         end
         
         function v = calcMass(N_p, N_s)
