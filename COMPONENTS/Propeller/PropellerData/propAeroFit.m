@@ -103,9 +103,11 @@ classdef propAeroFit < handle
             end
             
             k_P = cp_fit(D,P);
-            k_P = max(min(k_P, cp_range(2)),cp_range(1));
+            %k_P = max(min(k_P, cp_range(2)),cp_range(1));
+            %k_P = max(k_P,1e-6);
             k_T = ct_fit(D,P);
-            k_T = max(min(k_T, ct_range(2)),ct_range(1));
+            %k_T = max(min(k_T, ct_range(2)),ct_range(1));
+            %k_T = max(k_T,1e-6);
         end
         
         function plot(obj, D,P)
