@@ -7,13 +7,13 @@ classdef Battery < Component
     
     properties
         % Independent Params
-        N_p compParam = compParam('N_p', 1) % Number of cells in parallel
-        N_s compParam = compParam('N_s', 3) % Number of cells in series
-        Q compParam = compParam('Q', 4000) % mAh
+        N_p compParam = compParam('N_p', 1, 'Unit', "unit") % Number of cells in parallel
+        N_s compParam = compParam('N_s', 3, 'Unit', "unit") % Number of cells in series
+        Q compParam = compParam('Q', 4000, 'Unit', "mAh") % mAh
     
         % Dependent Params
-        R_s compParam = compParam('R_s', (10e-3) / 3) % Series Resistance - Ohms - From Turnigy Website
-        Mass compParam = extrinsicProp("Mass", NaN); % Dependent param defined in init
+        R_s compParam = compParam('R_s', (10e-3) / 3, 'Unit', "Ohm") % Series Resistance - Ohms - From Turnigy Website
+        Mass compParam = extrinsicProp("Mass", NaN, 'Unit', "kg"); % Dependent param defined in init
         
         variableV_OCV logical = true
         V_OCV_nominal double = 3.7 %Nominal Open Circuit Voltage = V_OCV_nominal*V_OCV_curve(q)
@@ -79,7 +79,7 @@ classdef Battery < Component
             
             
             obj.Mass.setDependency(@Battery.calcMass, [obj.N_p; obj.N_s]);
-            obj.R_s.setDependency();
+%            obj.R_s.setDependency();
         end
     end
     
