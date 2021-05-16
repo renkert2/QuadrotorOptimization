@@ -11,7 +11,7 @@ classdef Battery < Component
         N_s compParam = compParam('N_s', 3, 'Unit', "unit") % Number of cells in series
         Q compParam = compParam('Q', 4000, 'Unit', "mAh") % mAh
     
-        % Dependent Params
+        % Dependent Params - Dependency set in init()
         R_s compParam = compParam('R_s', (10e-3) / 3, 'Unit', "Ohm") % Series Resistance - Ohms - From Turnigy Website
         Mass compParam = extrinsicProp("Mass", NaN, 'Unit', "kg"); % Dependent param defined in init
         
@@ -30,6 +30,8 @@ classdef Battery < Component
         
         Averaged_SOC double = 1 % SOC at which V_OCV(q) = V_OCV_Average
         Nominal_SOC double = 1 % SOC at which V_OCV(q) = V_OCV_nominal
+        
+        BatteryFit paramFit
     end
     
     methods
@@ -78,8 +80,10 @@ classdef Battery < Component
             end
             
             
-            obj.Mass.setDependency(@Battery.calcMass, [obj.N_p; obj.N_s]);
-%            obj.R_s.setDependency();
+            load BatteryFit.mat BatteryFit;
+            BatteryFit.Inputs = [obj.N_s, obj.Q];
+            BatteryFit.Outputs = [obj.R_s, obj.Mass];
+            BatteryFit.setOutputDependency();
         end
     end
     
