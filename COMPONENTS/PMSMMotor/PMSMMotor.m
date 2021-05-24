@@ -19,10 +19,8 @@ classdef PMSMMotor < Component
        K_t 
     end
     
-    methods
-        function K_t = get.K_t(obj)
-            K_t = obj.kVToKt(obj.kV);
-        end
+    properties (SetAccess = private)
+        Fit paramFit
     end
     
     methods (Static)
@@ -52,8 +50,24 @@ classdef PMSMMotor < Component
         end
     end
     
+        
+    methods
+        function K_t = get.K_t(obj)
+            K_t = obj.kVToKt(obj.kV);
+        end
+        
+        function init(obj)
+            load MotorFit.mat MotorFit;
+            MotorFit.Inputs = [obj.kV, obj.Rm];
+            MotorFit.Outputs = [obj.M, obj.D];
+            MotorFit.setOutputDependency;
+            obj.Fit = MotorFit;
+            
+            obj.J.setDependency(@PMSMMotor.calcInertia, [obj.M, obj.D]);
+        end
+    end
     
-    methods (Access = protected)
+    methods (Access = protected)  
         function DefineComponent(obj)
             % Capacitance Types
             C(1) = Type_Capacitance('x');

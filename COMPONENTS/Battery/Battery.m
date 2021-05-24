@@ -31,7 +31,7 @@ classdef Battery < Component
         Averaged_SOC double = 1 % SOC at which V_OCV(q) = V_OCV_Average
         Nominal_SOC double = 1 % SOC at which V_OCV(q) = V_OCV_nominal
         
-        BatteryFit paramFit
+        Fit paramFit
     end
     
     methods
@@ -84,6 +84,7 @@ classdef Battery < Component
             BatteryFit.Inputs = [obj.N_s, obj.Q];
             BatteryFit.Outputs = [obj.R_s, obj.Mass];
             BatteryFit.setOutputDependency();
+            obj.Fit = BatteryFit;
         end
     end
     
@@ -146,10 +147,6 @@ classdef Battery < Component
         
         function c = mAhToCoulombs(mAh)
             c = 3.6*mAh;
-        end
-        
-        function v = calcMass(N_p, N_s)
-            v = N_p + N_s;
         end
     end
 end
