@@ -1,13 +1,8 @@
 classdef Optimization < handle  
     properties
         QR QuadRotor
-
-        propMassFit propMassFit
-        propAeroFit propAeroFit
-        motorFit motorFit
         
         OptiVars (:,1) optiVar
-        
         X_prev double 
     end
     
@@ -22,67 +17,25 @@ classdef Optimization < handle
         end
         
         function init(obj)
-            load PF_Aero.mat PF_Aero
-            obj.propAeroFit = PF_Aero;
-            
-            load PF_Mass.mat PF_Mass
-            obj.propMassFit = PF_Mass;
-            
-            load MF_KDE.mat MF_KDE
-            obj.motorFit = MF_KDE;
-            
             batt = obj.QR.Battery;
             prop = obj.QR.Propeller;
             motor = obj.QR.Motor;
             
             % Set Optimization Variables
-            OV(1) = optiVar("D", obj.propAeroFit.Boundary.X_mean(1), obj.propAeroFit.Boundary.X_lb(1),obj.propAeroFit.Boundary.X_ub(1));
-            OV(1).Description = "Diameter";
-            OV(1).Unit = "m";
-            OV(1).Parent = prop;
-            
-            OV(2) = optiVar("P", obj.propAeroFit.Boundary.X_mean(2), obj.propAeroFit.Boundary.X_lb(2), obj.propAeroFit.Boundary.X_ub(2));
-            OV(2).Description = "Pitch";
-            OV(2).Unit = "m";
-            OV(2).Parent = prop;
-            
-            OV(3) = optiVar("N_s", 6, 0.1, 12, 'Enabled', false); % Typically voltage is selected to highest possible value
-            OV(3).Description = "Series Cells";
-            OV(3).Parent = batt;
-            
-            OV(4) = optiVar("N_p", 1, 0.1, 20);
-            OV(4).Description = "Parallel Cells";
-            OV(4).Parent = batt;
-            
-            OV(5) = optiVar("kV", obj.motorFit.Boundary.X_mean(1), obj.motorFit.Boundary.X_lb(1), obj.motorFit.Boundary.X_ub(1));
-            OV(5).Description = "Speed Constant";
-            OV(5).Unit = "RPM/V";
-            OV(5).Parent = motor;
-            
-            OV(6) = optiVar("Rm", obj.motorFit.Boundary.X_mean(2), obj.motorFit.Boundary.X_lb(2), obj.motorFit.Boundary.X_ub(2));
-            OV(6).Description = "Phase Resistance";
-            OV(6).Unit = "Ohm";
-            OV(6).Parent = motor;
+            OV(1) = optiVar(prop.D, [], prop.Fit.Boundary.X_lb(1),prop.Fit.Boundary.X_ub(1));
+            OV(2) = optiVar(prop.P, [], prop.Fit.Boundary.X_lb(2), prop.Fit.Boundary.X_ub(2));            
+            OV(3) = optiVar(batt.N_s, [], batt.Fit.Boundary.X_lb(1),batt.Fit.Boundary.X_ub(1), 'Enabled', true); % Typically voltage is selected to highest possible value           
+            OV(4) = optiVar(batt.Q, [], batt.Fit.Boundary.X_lb(2),batt.Fit.Boundary.X_ub(2));
+            OV(5) = optiVar(motor.kV, [], motor.Fit.Boundary.X_lb(1), motor.Fit.Boundary.X_ub(1));
+            OV(6) = optiVar(motor.Rm, [], motor.Fit.Boundary.X_lb(2), motor.Fit.Boundary.X_ub(2));
 
             obj.OptiVars = OV';
-        end
-        
-        function initializeFromQR(obj)
-            ov = obj.OptiVars;
-            qr = obj.QR;
-            ov(1).x0 = qr.Propeller.D.Value;
-            ov(2).x0 = qr.Propeller.P.Value;
-            ov(3).x0 = qr.Battery.N_s.Value;
-            ov(4).x0 = qr.Battery.N_p.Value;
-            ov(5).x0 = qr.Motor.kV.Value;
-            ov(6).x0 = qr.Motor.Rm.Value;
-            ov.reset()
         end
 
         function [X_opt_s, F_opt, OO] = Optimize(obj, objective, r, opts)
             arguments
                 obj
-                objective OptimObjectives 
+                objective OptimObjectives = "FlightTime"
                 r = @(t) (t>0)
                 opts.SimulationBased = false
                 opts.DiffMinChange = 1e-4
@@ -124,9 +77,7 @@ classdef Optimization < handle
          
             % Set Current Values to Optimal Value in OptiVars
             setVals(obj.OptiVars, X_opt_s);
-            
-            % Ensure the QuadRotor gets updated to the correct sym param vals
-            obj.updateParamVals(XAll(obj.OptiVars));
+            obj.updateQR();
             OO.X_opt = unscale(obj.OptiVars);
             
             if opts.CaptureState
@@ -135,10 +86,9 @@ classdef Optimization < handle
             end
             
             function f = objfun(X_s)
-                X = XAll(obj.OptiVars,X_s); % Unscale and return all
-               
+                setVals(obj.OptiVars, X_s);
                 try
-                    obj.updateParamVals(X);
+                    obj.updateQR();
                 catch
                     f = NaN;
                     return
@@ -155,21 +105,27 @@ classdef Optimization < handle
             
             function [c,ceq] = nlcon(X_s)
                 ceq = [];
-                X = XAll(obj.OptiVars,X_s); % Unscale and return all values
-                
+                setVals(obj.OptiVars, X_s);
                 try
-                    obj.updateParamVals(X);
-                    % QR Dependent Objectives
+                    obj.updateQR();
+                    
+                    % QR Dependent Constraints
                     c_input = obj.QR.SS_QAve.u - 1;
                 catch
                     c_input = NaN;
                 end
                 
-                % Boundary Objectives
-                c_prop = distToBoundary(obj.propAeroFit.Boundary, X(find(obj.OptiVars, ["D", "P"])));
-                c_motor = distToBoundary(obj.motorFit.Boundary, X(find(obj.OptiVars, ["kV", "Rm"])));
+                % Boundary Constraints
+                batt = obj.QR.Battery;
+                c_batt = distToBoundary(batt.Fit.Boundary, [batt.Fit.Inputs.Value]');
                 
-                c = [c_prop; c_motor; c_input];
+                prop = obj.QR.Propeller;
+                c_prop = distToBoundary(prop.Fit.Boundary, [prop.Fit.Inputs.Value]');
+                
+                motor = obj.QR.Motor;
+                c_motor = distToBoundary(motor.Fit.Boundary, [motor.Fit.Inputs.Value]');
+                
+                c = [c_batt; c_prop; c_motor; c_input];
             end
             
             function F = processF(f)
@@ -335,71 +291,13 @@ classdef Optimization < handle
             end
         end
         
-        function resetParamVals(obj)
-           obj.updateParamVals(vertcat(obj.OptiVars.x0)); 
-        end
-        
-        function updateParamVals(obj,X)
-            if nargin == 1
-                X = vertcat(obj.OptiVars.Value);
-            end
+        function updateQR(obj)
+            X = [obj.OptiVars.Value];
             if ~isempty(obj.X_prev) && all(X == obj.X_prev)
-                return % Only update the quadrotor if the design variables have changed value
+                return % Only update variables if the design variables have changed value
             end
-                
-            %X_prop = [D;P]
-            X_prop = X(find(obj.OptiVars, ["D", "P"]));
-            D_prop = X_prop(1);
-            P_prop = X_prop(2);
-            [k_P_prop, k_T_prop] = calcPropCoeffs(obj.propAeroFit, X_prop);
-            [M_prop,J_prop] = calcMassProps(obj.propMassFit, D_prop);
-                   
-            %X_batt = [N_p; N_s]
-            X_batt = X(find(obj.OptiVars, ["N_s", "N_p"]));
-            N_s_batt = X_batt(1);
-            N_p_batt = X_batt(2);
             
-            %X_motor = [kV; Rm]
-            X_motor = X(find(obj.OptiVars, ["kV", "Rm"]));
-            kV_motor = X_motor(1);
-            Rm_motor = X_motor(2);
-            [M_motor, J_motor, D_motor] = calcMotorProps(obj.motorFit, X_motor);
-            
-            % sym_params:
-            %    D_prop
-            %    J_motor
-            %    J_prop
-            %    K_t_motor
-            %    M_motor
-            %    M_prop
-            %    N_p_batt
-            %    N_s_batt
-            %    Rm_motor
-            %    k_P_prop
-            %    k_T_prop
-            QR = obj.QR;
-            
-            % Battery
-            QR.Battery.N_p.Value = N_p_batt;
-            QR.Battery.N_s.Value = N_s_batt;
-            
-            % Prop
-            QR.Propeller.D.Value = D_prop;
-            QR.Propeller.P.Value = P_prop;
-            QR.Propeller.J.Value = J_prop;
-            QR.Propeller.M.Value = M_prop;
-            QR.Propeller.k_P.Value = k_P_prop;
-            QR.Propeller.k_T.Value = k_T_prop;
-            
-            % Motor
-            QR.Motor.J.Value = J_motor;
-            QR.Motor.kV.Value = kV_motor;
-            QR.Motor.M.Value = M_motor;
-            QR.Motor.Rm.Value = Rm_motor;
-            QR.Motor.D.Value = D_motor;
-
             obj.QR.update();
-            obj.QR.SS_QAve = obj.QR.calcSteadyState();
             obj.X_prev = X;
         end
     end

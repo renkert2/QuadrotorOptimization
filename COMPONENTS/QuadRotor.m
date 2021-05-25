@@ -138,7 +138,9 @@ classdef QuadRotor < System
 
             % Hover Speed
             prop = obj.Propeller;
-            hover_speed = prop.calcSpeed(obj.HoverThrust()/4);
+            mass_pop = pop(obj.Mass);
+            thrust_pop = mass_pop*9.81;
+            hover_speed = prop.calcSpeed(thrust_pop/4);
             obj.HoverSpeed = PF(hover_speed);
             
             % Rotor Speed Function 
