@@ -19,10 +19,13 @@ classdef Battery < Component
         V_OCV_nominal double = 3.7 %Nominal Open Circuit Voltage = V_OCV_nominal*V_OCV_curve(q)
         V_OCV_curve = symfun(1, sym('q')) % Protected in set method
     end
+    
+    properties (SetAccess = private)
+        R_p compParam = compParam('R_p', NaN, 'Unit', "Ohm", 'Description', 'Pack Resistance') % Dependent compParam, pack resistance
+        Capacity compParam = compParam('Capacity', NaN, 'Unit', "Amp*second", 'Description', 'Pack Capacity'); % Dependent compParam A*s
+    end
         
     properties (Dependent)
-        Capacity % A*s
-        PackResistance % Ohms
         V_OCV_pack
     end
     
@@ -35,15 +38,7 @@ classdef Battery < Component
         Fit paramFit
     end
     
-    methods
-        function C = get.Capacity(obj)
-            C = obj.N_p*Battery.mAhToCoulombs(obj.Q);
-        end
-        
-        function R = get.PackResistance(obj)
-            R = obj.N_s/obj.N_p*obj.R_s;
-        end
-        
+    methods        
         function V = get.V_OCV_pack(obj)
            V = obj.N_s*obj.V_OCV_nominal*obj.V_OCV_curve;
         end
@@ -90,6 +85,12 @@ classdef Battery < Component
             BatteryFit.Outputs = [obj.R_s, obj.Mass];
             BatteryFit.setOutputDependency();
             obj.Fit = BatteryFit;
+            
+            rpfun = @(N_s,N_p,R_s) N_s./N_p.*R_s;
+            setDependency(obj.R_p, rpfun, [obj.N_s, obj.N_p, obj.R_s]);
+            
+            capfun = @(N_p,Q) N_p.*Battery.mAhToCoulombs(Q);
+            setDependency(obj.Capacity, capfun, [obj.N_p, obj.Q]);
         end
     end
     
@@ -104,7 +105,9 @@ classdef Battery < Component
             P(2) = Type_PowerFlow("xt^2");
             
             % Vertices
-            energy_coeff = obj.N_s*obj.N_p*Battery.mAhToCoulombs(obj.Q)*obj.V_OCV_nominal;
+            voltage_coeff = obj.N_s*obj.V_OCV_nominal;
+            energy_coeff = voltage_coeff*pop(obj.Capacity);
+            
             Vertex(1) = GraphVertex_Internal('Description', "Battery SOC", 'Capacitance', C(1), 'Coefficient', energy_coeff, 'Initial', 1, 'VertexType','Abstract');
             Vertex(2) = GraphVertex_External('Description', "Load Current", 'VertexType', 'Current');
             Vertex(3) = GraphVertex_External('Description', "Heat Sink", 'VertexType', 'Temperature');
@@ -112,9 +115,8 @@ classdef Battery < Component
             % Inputs
             
             % Edges
-            voltage_coeff = obj.N_s*obj.V_OCV_nominal;
             Edge(1) = GraphEdge_Internal('PowerFlow',P(1),'Coefficient',voltage_coeff,'TailVertex',Vertex(1),'HeadVertex',Vertex(2));
-            Edge(2) = GraphEdge_Internal('PowerFlow',P(2),'Coefficient',obj.PackResistance,'TailVertex',Vertex(2),'HeadVertex',Vertex(3));
+            Edge(2) = GraphEdge_Internal('PowerFlow',P(2),'Coefficient',pop(obj.R_p),'TailVertex',Vertex(2),'HeadVertex',Vertex(3));
             
             g = Graph(Vertex, Edge);
             obj.Graph = g;

@@ -17,14 +17,15 @@ classdef QuadRotor < System
         SimpleModel Model
         LinearDynamicModel LinearModel
         
-        % SymQuantities - Properties that are functions of the QuadRotor
+        % Dependent Parameters - Properties that are functions of the QuadRotor
         % Parameters
-        Mass function_handle
-        BattCap function_handle
-        V_OCV_pack function_handle % Open circuit voltage of the battery pack; function of Q. 
+        Mass extrinsicProp
+        
         HoverThrust function_handle % Thrust required to hover
         HoverSpeed function_handle  % Speed required to hover
+        
         RotorSpeed function_handle % Calculates rotor speed as a function of total required thrust
+        V_OCV_pack function_handle % Open circuit voltage of the battery pack; function of Q.
         
         % Drag Model Sym Quantities
         ReferenceAreaVector
@@ -101,7 +102,7 @@ classdef QuadRotor < System
             warning('off', 'Control:combination:connect10') % Annoying message from calcControllerGains
             init_post(obj);
         end
-        
+
         function init_post(obj)
             createModel(obj);
             setParamQuantities(obj);
@@ -114,6 +115,7 @@ classdef QuadRotor < System
         end
 
         function update(obj)
+            obj.Params.update();
             obj.SS_QAve = calcSteadyState(obj);
             obj.flight_time = [];
             obj.range = [];
@@ -122,27 +124,21 @@ classdef QuadRotor < System
         function setParamQuantities(obj)
             p = obj.Params;
             PF = @(s) matlabFunction(p,s); % Wrapper function for brevity
-            
-            % Battery Capacity
-            batt = obj.Battery;
-            obj.BattCap = PF(batt.Capacity); % A*s
-            
-            % Battery Pack V_OCV
-            obj.V_OCV_pack = matlabFunction(p, batt.V_OCV_pack, {sym('q')});
-            
+                       
             % Mass
             exps = obj.Params.extrinsicProps;
             masses = getProp(exps, 'Mass');
-            mass = masses(end);
-            obj.Mass = PF(mass(end));
+            obj.Mass = masses(end);
             
+            % Battery Pack V_OCV
+            obj.V_OCV_pack = matlabFunction(p, obj.Battery.V_OCV_pack, {sym('q')});
+
             % Hover Thrust
-            hover_thrust = 9.81*mass;
-            obj.HoverThrust = PF(hover_thrust); % Total Thrust required to hover
+            obj.HoverThrust = @() 9.81*obj.Mass.Value; % Total Thrust required to hover
 
             % Hover Speed
             prop = obj.Propeller;
-            hover_speed = prop.calcSpeed(hover_thrust/4);
+            hover_speed = prop.calcSpeed(obj.HoverThrust()/4);
             obj.HoverSpeed = PF(hover_speed);
             
             % Rotor Speed Function 
@@ -386,7 +382,7 @@ classdef QuadRotor < System
         end
         
         function [A,B,C,D] = calcBodyModel(obj)
-            m = obj.Mass();
+            m = obj.Mass.Value;
             
             A = [0 1;0 0];
             B = [0; 1/m];
@@ -687,7 +683,7 @@ classdef QuadRotor < System
                     end
                 end
             else
-                cap = obj.BattCap(); % A*s
+                cap = obj.Battery.Capacity.Value; % A*s
                 ave_current = obj.SS_QAve.y(5);
                 flight_time = cap/ave_current;
             end
@@ -765,7 +761,7 @@ classdef QuadRotor < System
                         qrs = obj.calcSteadyState([], T_trim);
                     end
                     u = qrs.u;
-                    cap = obj.BattCap(); % A*s
+                    cap = obj.Battery.Capacity.Value; % A*s
                     ave_current = qrs.BusCurrent;
                     flight_time = cap/ave_current;
                     

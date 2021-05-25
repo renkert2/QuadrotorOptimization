@@ -17,7 +17,7 @@ classdef Boundary
         X_mean
     end
     
-    properties (Access = private)
+    properties (Hidden)
         N_vars
     end
     
@@ -48,7 +48,7 @@ classdef Boundary
         end
         
         function d = distToBoundary(obj,varargin)
-            switch obj.N_Vars
+            switch obj.N_vars
                 case 1
                     X = varargin{1};
                     in_bounds = (obj.X_lb <= X) && (X <= obj.X_ub);

@@ -32,7 +32,6 @@ Rm = 0.108; % Estimate https://www.rcmoment.com/p-rm6909.html
 
 QR_S500.Motor.kV.Value = kV;
 QR_S500.Motor.Rm.Value = Rm;
-QR_S500.Motor.Params.update()
 
 % Actual Mass: 0.0639
 % This works very well with the fit from KDE's data
@@ -43,14 +42,12 @@ P = 4.5*(u.in/u.m);
 QR_S500.Propeller.D.Value = D;
 QR_S500.Propeller.P.Value = P;
 
-QR_S500.Propeller.Params.update();
-
 % Actual mass: 0.055/4 = 0.0138 kg?
 % The propeller surrogate model underestimates the k_T and k_P by a bit.
 % It overestimates the mass significantly.  Predicted mass is 0.031287
 
 %%
-QR_S500.update()
+QR_S500.update() % Automatically updates parameters
 
 %%
 save QR_S500.mat QR_S500

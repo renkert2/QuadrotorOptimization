@@ -73,8 +73,16 @@ for i in range(len(df)):
         filekey = pairs[model]
         if filekey in aero_dict:
             aero_data = aero_dict[filekey]
-            Cp[i] = np.mean(aero_data["Cp"])
-            Ct[i] = np.mean(aero_data["Ct"])
+            cpdat = np.array(aero_data["Cp"])
+            ctdat = np.array(aero_data["Ct"])
+            rpmdat = np.array(aero_data["RPM"])
+
+            rpmmax = 10000
+            rpmmin = 1000
+            filterindex = np.logical_and(rpmdat > max(min(rpmdat),rpmmin), rpmdat < min(max(rpmdat), rpmmax))
+
+            Cp[i] = np.mean(cpdat[filterindex])
+            Ct[i] = np.mean(ctdat[filterindex])
 
 # %% Append Cp and Ct to df
 df["Cp"] = Cp
