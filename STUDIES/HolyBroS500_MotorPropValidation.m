@@ -3,8 +3,8 @@ load QR_S500.mat;
 prop = QR_S500.Propeller;
 motor = QR_S500.Motor;
 
-prop_default = getValues(prop.Params);
-motor_default = getValues(motor.Params);
+% prop_default = getValues(prop.Params);
+% motor_default = getValues(motor.Params);
 
 %% Experimental Data
 throttle = [0.5;0.55;0.60;0.65;0.75;0.85;1];
@@ -15,7 +15,7 @@ rotor_speed = [6015;6620;7113;7563;8545;9442;10464]*u.revolutionPerMinute/(u.rad
 
 t_exp = table(throttle, torque, thrust, current, rotor_speed, 'VariableNames', ["Throttle", "Torque", "Thrust", "Current", "RotorSpeed"]);
 
-
+makeAndPlot(QR_S500,t_exp)
 %% Fit Torque and Speed Coeffs to Experimental Data
 ft = fittype({'x^2'});
 torque_fit = fit(t_exp.RotorSpeed,t_exp.Torque,ft);
@@ -34,6 +34,7 @@ prop.D.Tunable = true;
 prop.k_P.Value = k_P;
 prop.k_T.Value = k_T;
 
+makeAndPlot(QR_S500,t_exp)
 %% Fit Motor Values to Experimental Data
 ft = fittype({'x'});
 kt_fit = fit(t_exp.Current, t_exp.Torque, ft);
@@ -41,12 +42,9 @@ kt = kt_fit.a;
 kv = PMSMMotor.KtTokV(kt);
 motor.kV.Value = kv;
 
-
-%% Tweak the Parameter Values to more accurately reflect the model
-% QR_S500.Propeller.k_P.Value = 0.05;
-% QR_S500.Propeller.k_T.Value = 0.12;
-
+makeAndPlot(QR_S500,t_exp)
 %% 
+function makeAndPlot(QR_S500, t_exp)
 inv = QR_S500.Inverter;
 motorprop = QR_S500.Components([QR_S500.Components.Name] == "MotorProp_1");
 
@@ -70,11 +68,6 @@ for i = 1:numel(u_vals)
     t_model.Current(i) = y_bar(3);
     t_model.RotorSpeed(i) = y_bar(2);
 end
-    
-%
-% plot(t_model.RotorSpeed, t_model.Current)
-% hold on
-% plot(t_exp.RotorSpeed, t_exp.Current)
 
 % Plots
 figure
@@ -123,3 +116,4 @@ title("Rotor Speed vs Current")
 xlabel("$$I$$ (A)", 'Interpreter', 'latex')
 ylabel("$$\omega$$ (rads/s)", 'Interpreter', 'latex')
 legend(["Predicted", "Measured"]);
+end

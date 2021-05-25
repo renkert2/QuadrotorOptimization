@@ -3,9 +3,10 @@ classdef Propeller < Component
     %   Detailed explanation goes here
     
     properties
-        M {mustBeParam} = extrinsicProp('Mass', 0.008, 'Unit', "kg")
-        J {mustBeParam} = compParam('J', 2.1075e-05,'Unit', "kg*m^2") % Rotational Inertia - kg*m^2 from "Stabilization and Control of Unmanned Quadcopter (Jiinec)
-        % k_Q and k_T Parameters from: 
+        D {mustBeParam} = compParam('D', 0.1780, 'Unit', "m") % Propeller Diameter - m
+        P {mustBeParam} =  compParam('P', 0.0673, 'Unit', "m") % Propeller Pitch - m
+        
+        % k_Q and k_T Parameters from:
         % Illinois Volume 2 Data
         % Static Test for C_t and C_p 
         % Note: C_q (drag coeff) = C_p (power coeff) / (2 * pi)
@@ -14,10 +15,15 @@ classdef Propeller < Component
         % Nominal Parameters from "magf_7x4" in propStruct
         k_P {mustBeParam} = compParam('k_P',  0.0411) % Power coefficient - k_P = 2*pi*k_Q, speed in rev/s
         k_T {mustBeParam} = compParam('k_T', 0.0819) % Thrust coefficient - N/(s^2*kg*m^2), speed in rev/s.
-        D {mustBeParam} = compParam('D', 0.1780, 'Unit', "m") % Propeller Diameter - m
-        P {mustBeParam} =  compParam('P', 0.0673, 'Unit', "m") % Propeller Pitch - m
+        
+        Mass {mustBeParam} = extrinsicProp('Mass', 0.008, 'Unit', "kg")
+        J {mustBeParam} = compParam('J', 2.1075e-05,'Unit', "kg*m^2") % Rotational Inertia - kg*m^2 from "Stabilization and Control of Unmanned Quadcopter (Jiinec)
         
         rho {mustBeParam} = 1.205 % Air Density - kg/m^3
+    end
+    
+    properties (SetAccess = private)
+       Fit paramFit
     end
 
     
@@ -62,6 +68,16 @@ classdef Propeller < Component
         function torque = calcTorque(obj, speed)
             torque = obj.square_drag_coeff*(speed.^2);
         end
+        
+        function init(obj)
+            load PropellerFit.mat PropellerFit;
+            PropellerFit.Inputs = [obj.D, obj.P];
+            PropellerFit.Outputs = [obj.k_P, obj.k_T, obj.Mass];
+            PropellerFit.setOutputDependency;
+            obj.Fit = PropellerFit;
+            
+            obj.J.setDependency(@Propeller.calcInertia, [obj.Mass, obj.D]);
+        end
     end
     
     methods (Static)
@@ -82,9 +98,13 @@ classdef Propeller < Component
             
             k_rev_per_s = k_rad_per_s * (2*pi)^2;
         end
+        
+        function J = calcInertia(M,D)
+            J = 1/12*M.*D.^2;
+        end
     end
     
-    methods (Access = protected)
+    methods (Access = protected)        
         function DefineComponent(obj)
             % Capacitance Types
             C(1) = Type_Capacitance('x');
