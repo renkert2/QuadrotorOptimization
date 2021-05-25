@@ -28,3 +28,7 @@ foRs.Robust = 'Bisquare';
 foRs.StartPoint = [0.932734068002066 0.597116865382136 0.78528762506439 0.546881519204984 0.278498218867048];
 
 pf.setModels(ftRs, foRs, ftM, foM);
+
+%%
+BatteryFit = pf;
+save BatteryFit.mat BatteryFit

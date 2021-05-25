@@ -21,6 +21,7 @@ classdef Battery < Component
     end
         
     properties (Dependent)
+        Capacity % A*s
         PackResistance % Ohms
         V_OCV_pack
     end
@@ -35,6 +36,10 @@ classdef Battery < Component
     end
     
     methods
+        function C = get.Capacity(obj)
+            C = obj.N_p*Battery.mAhToCoulombs(obj.Q);
+        end
+        
         function R = get.PackResistance(obj)
             R = obj.N_s/obj.N_p*obj.R_s;
         end

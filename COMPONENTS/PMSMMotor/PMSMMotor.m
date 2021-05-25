@@ -11,7 +11,7 @@ classdef PMSMMotor < Component
         T_c {mustBeParam} = 0 % Coulomb Friction
         sigmoid_a_param {mustBeParam} = 10 % Parameter used to approximate sign function with sigmoid function sig(w) = 2/(1+Exp(-a*w))-1
         
-        M {mustBeParam} = extrinsicProp('Mass',0.04, 'Unit', "kg");
+        Mass {mustBeParam} = extrinsicProp('Mass',0.04, 'Unit', "kg");
         D {mustBeParam} = compParam('D', 0.05, 'Unit', "m");
     end
     
@@ -59,11 +59,11 @@ classdef PMSMMotor < Component
         function init(obj)
             load MotorFit.mat MotorFit;
             MotorFit.Inputs = [obj.kV, obj.Rm];
-            MotorFit.Outputs = [obj.M, obj.D];
+            MotorFit.Outputs = [obj.Mass, obj.D];
             MotorFit.setOutputDependency;
             obj.Fit = MotorFit;
             
-            obj.J.setDependency(@PMSMMotor.calcInertia, [obj.M, obj.D]);
+            obj.J.setDependency(@PMSMMotor.calcInertia, [obj.Mass, obj.D]);
         end
     end
     
