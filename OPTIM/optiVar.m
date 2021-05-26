@@ -4,13 +4,7 @@ classdef optiVar < handle
     
     properties
         Child compParam
-        
-        Sym string
-        Unit string
-        Description string
-        Parent SystemElement
-        
-        Value double
+
         x0 double
         lb double
         ub double
@@ -20,54 +14,30 @@ classdef optiVar < handle
         Scaled logical = true
     end
     
+    properties (Dependent)
+        Value
+    end
+    
     properties (Hidden)
         EnabledDefault logical = true
-        ChildFlag logical = false
-        AutoUpdateChild logical = true
     end
     
     methods
-        function obj = optiVar(sym_arg, x0, lb, ub, opts)
+        function obj = optiVar(child, x0, lb, ub, opts)
             arguments
-                sym_arg {mustBeA(sym_arg, ["string", "char", "compParam"])}
-                x0 double = []
+                child compParam
+                x0 double = 0
                 lb double = -Inf
                 ub double = Inf
                 opts.Enabled = true
                 opts.Scaled = true
                 opts.ScaleFactor double = []
-                opts.AutoUpdateChild logical = true;
-
-                opts.Description string = string.empty()
-                opts.Unit string = string.empty()
             end
             
-            if isa(sym_arg, "compParam")
-                obj.Child = sym_arg;
-                obj.Sym = sym_arg.Sym;
-            else
-                obj.ChildFlag = false;
-                obj.Sym = sym_arg;
-            end
-            
-            if ~isempty(x0)
-                obj.Value = x0;
-                obj.x0 = x0;
-            elseif ~obj.ChildFlag
-                obj.Value = 0;
-                obj.x0 = 0;
-            end
-            
+            obj.Child = child;
+            obj.x0 = x0;
             obj.lb = lb;
             obj.ub = ub;
-            
-            if ~isempty(opts.Description())
-                obj.Description = opts.Description;
-            end
-            
-            if ~isempty(opts.Unit())
-                obj.Unit = opts.Unit;  
-            end
  
             obj.Enabled = opts.Enabled;
             obj.EnabledDefault = opts.Enabled;
@@ -77,23 +47,18 @@ classdef optiVar < handle
             end            
         end
         
-        function set.Value(obj, value)
-            obj.Value = value;
-            if obj.ChildFlag && obj.AutoUpdateChild
-                obj.Child.Value = value;
-            end
-        end
-        
         function set.Child(obj,child)
             obj.Child = child;
-            assert(child.Dependent == false, "Child Param must be Independent");
-            
-            obj.ChildFlag = true;
+            assert(child.Dependent == false, "Child Param of Optimization Variable must be Independent");
             obj.x0 = child.Value;
-            obj.Value = obj.x0; % Be careful with recursion here b/c Value set method affects child's value
-            obj.Description = child.Description;
-            obj.Unit = child.Unit;
-            obj.Parent = child.Parent;
+        end
+        
+        function set.Value(obj, value)
+            obj.Child.Value = value;
+        end
+        
+        function val = get.Value(obj)
+            val = obj.Child.Value;
         end
         
         function i = isEnabled(obj)
@@ -102,7 +67,6 @@ classdef optiVar < handle
         
         function x0 = X0(obj)
             x0 = scale(obj, filterEnabled(obj, 'x0'));
-            
         end
         
         function lb = LB(obj)
@@ -170,26 +134,12 @@ classdef optiVar < handle
         end
         
         function o = get(obj, syms)
-            i = ismember([obj.Sym], syms);
+            i = ismember([obj.Child.Sym], syms);
             o = obj(i);
         end
         
-        function s = latex(obj_array, opts)
-            arguments
-                obj_array
-                opts.UnitFlag = true
-            end
-            
-            N = numel(obj_array);
-            s = string.empty(N,0);
-            for i = 1:N
-                obj = obj_array(i);
-                s_temp = "$$"+obj.Sym+"$$";
-                if ~isempty(obj.Unit) && obj.Unit ~= "" && opts.UnitFlag
-                    s_temp = s_temp + " "+"("+obj.Unit+")";
-                end
-                s(i,1) = s_temp;
-            end
+        function s = latex(obj_array, varargin)
+            s = latex(vertcat(obj_array.Child), varargin{:});
         end
     end
     
@@ -232,15 +182,24 @@ classdef optiVar < handle
                obj.Enabled = obj.EnabledDefault;
            end
         end
+         
+        function s = parentTypes(obj_array) 
+            s = string.empty(numel(obj_array), 0);
+            for i = 1:numel(obj_array)
+                s(i) = class(obj_array(i).Parent);
+            end
+            s = reshape(s,size(obj_array));
+        end
     end
     
     methods (Hidden)
         function dispAll(obj_array)
             % Modifies method from Mixin.Custom Display
-            tbl = table(vertcat(obj_array.Sym), vertcat(obj_array.Value), vertcat(obj_array.Unit),...
+            childs = vertcat(obj_array.Child);
+            tbl = table(vertcat(childs.Sym), vertcat(childs.Value), vertcat(childs.Unit),...
                 vertcat(obj_array.x0), vertcat(obj_array.lb), vertcat(obj_array.ub), percentChange(obj_array),...
                 vertcat(obj_array.Enabled), vertcat(obj_array.Scaled), vertcat(obj_array.scaleFactor),...
-                vertcat(obj_array.Description), vertcat(vertcat(obj_array.Parent).Name),...
+                vertcat(childs.Description), vertcat(vertcat(childs.Parent).Name),...
                 'VariableNames', ["Sym", "Value", "Unit","X0", "LB", "UB","% Change", "Enabled", "Scaled", "Scale Factor", "Description", "Parent"]);
             disp(tbl);
         end

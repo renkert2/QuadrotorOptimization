@@ -5,6 +5,7 @@ classdef OptimOutput
     properties
         Objective OptimObjectives
         
+        ParamVals (:,1) compParamValue
         X_opt
         F_opt
         

@@ -1,8 +1,15 @@
 classdef Optimization < handle      
     properties
-        QR QuadRotor
-        
+        QR QuadRotor 
         OptiVars (:,1) optiVar
+        
+        Objective OptimObjectives = "FlightTime" 
+        SimulationBased logical = false;
+        SimulationOpts cell = {'InterpolateTime', false, 'Timeout', 30} % Options pertaining to the simulation-based flight time calculation
+        ReferenceTrajectory function_handle = @(t) (t>0) % Reference Trajectory used for Simulation-Based Optimization
+    end
+    
+    properties (Hidden)
         X_prev double 
     end
     
@@ -32,14 +39,10 @@ classdef Optimization < handle
             obj.OptiVars = OV';
         end
 
-        function [X_opt_s, F_opt, OO] = Optimize(obj, objective, r, opts)
+        function [OO] = Optimize(obj, opts)
             arguments
                 obj
-                objective OptimObjectives = "FlightTime"
-                r = @(t) (t>0)
-                opts.SimulationBased = false
                 opts.DiffMinChange = 1e-4
-                opts.SimulationOpts cell = {'InterpolateTime', false, 'Timeout', 30} % Options pertaining to the simulation-based flight time calculation
                 opts.OptimizationOpts cell = {}
                 opts.OptimizationOutput logical = true
                 opts.InitializeFromValue logical = false
@@ -47,7 +50,7 @@ classdef Optimization < handle
             end
             
             optimopts = optimoptions('fmincon', 'Algorithm', 'sqp');
-            if opts.SimulationBased
+            if obj.SimulationBased
                 optimopts = optimoptions(optimopts, 'DiffMinChange', opts.DiffMinChange);
             end
             if opts.OptimizationOutput
@@ -60,22 +63,21 @@ classdef Optimization < handle
             else
                 x0 = X0(obj.OptiVars);
             end
+            
             lb = LB(obj.OptiVars);
             ub = UB(obj.OptiVars);
             
             OO = OptimOutput();
-            OO.Objective = objective;
+            OO.Objective = obj.Objective;
             
             qr_con_in_cache = obj.QR.ConstrainInput; % Save previous state of QR.ConstrainInput
             obj.QR.ConstrainInput = false; % Hand input constraint to optimization solver
             
-            [X_opt_s, f_opt, OO.exitflag, ~, OO.lambda, OO.grad, OO.hessian] = fmincon(@objfun ,x0, [], [], [], [], lb, ub, @(X_s) nlcon(X_s), optimopts);
-            F_opt = processF(f_opt); % Transform objective function output to desired output
+            [X_opt_s, f_opt, OO.exitflag, ~, OO.lambda, OO.grad, OO.hessian] = fmincon(@objfun_local ,x0, [], [], [], [], lb, ub, @nlcon_local, optimopts);
+            F_opt = obj.processF(f_opt); % Transform objective function output to desired output
             OO.F_opt = F_opt;
             
             % Specify Descriptions for constraints
-            f = fieldnames(OO.lambda)';
-            f{2,1} = {};
             lambda_desc = struct();
             lambda_desc.ineqnonlin = ["Battery", "Propeller", "Motor", "Input"]; % Hardcoded for now.  Would be good to have Constraint objects at some point
             OO.lambdaDesc = lambda_desc;
@@ -87,72 +89,84 @@ classdef Optimization < handle
             obj.updateQR();
             OO.X_opt = unscale(obj.OptiVars);
             
+            % Get optimal ParamVals to load later or for discrete search
+            OO.ParamVals = getValues(vertcat(obj.OptiVars.Child));
+            
             if opts.CaptureState
                 OO.PerformanceData = obj.QR.PerformanceData;
                 OO.DesignData = obj.QR.DesignData;
             end
             
-            function f = objfun(X_s)
+            function f = objfun_local(X_s)
                 setVals(obj.OptiVars, X_s);
-                try
-                    obj.updateQR();
-                catch
-                    f = NaN;
-                    return
-                end
-                
-                switch objective
-                    case "FlightTime"
-                        f = -flightTime();
-                    case "Range"
-                        f = -obj.QR.Range();
-                end
-                % implement objective function scaling at some point
+                f = objfun(obj);
             end
             
-            function [c,ceq] = nlcon(X_s)
-                ceq = [];
+            function [c,ceq] = nlcon_local(X_s)
                 setVals(obj.OptiVars, X_s);
-                try
-                    obj.updateQR();
-                    
-                    % QR Dependent Constraints
-                    c_input = obj.QR.SS_QAve.u - 1;
-                catch
-                    c_input = NaN;
-                end
-                
-                % Boundary Constraints
-                batt = obj.QR.Battery;
-                c_batt = distToBoundary(batt.Fit.Boundary, [batt.Fit.Inputs.Value]');
-                
-                prop = obj.QR.Propeller;
-                c_prop = distToBoundary(prop.Fit.Boundary, [prop.Fit.Inputs.Value]');
-                
-                motor = obj.QR.Motor;
-                c_motor = distToBoundary(motor.Fit.Boundary, [motor.Fit.Inputs.Value]');
-                
-                c = [c_batt; c_prop; c_motor; c_input];
+                [c,ceq] = nlcon(obj);
+            end
+        end
+        
+        function f = objfun(obj)
+            try
+                obj.updateQR();
+            catch
+                f = NaN;
+                return
             end
             
-            function F = processF(f)
-                % Implement objective function scaling at some point              
-                switch objective
-                    case "FlightTime"
-                        F = -f;
-                    case "Range"
-                        F = -f;
-                end
+            switch obj.Objective
+                case "FlightTime"
+                    f = -flightTime();
+                case "Range"
+                    f = -obj.QR.Range();
             end
             
             function ft = flightTime()
-                if opts.SimulationBased
+                if obj.SimulationBased
                     obj.QR.calcControllerGains;
-                    ft = obj.QR.flightTime(r,'SimulationBased',true, opts.FlightTimeOpts{:});
+                    ft = obj.QR.flightTime(obj.ReferenceTrajectory,'SimulationBased',true, obj.SimulationOpts{:});
                 else
                     ft = obj.QR.flightTime('SimulationBased',false);
                 end
             end
+            % implement objective function scaling at some point
+        end
+        
+        function F = processF(obj,f)
+            % Processes objective function value and returns desired value
+            % Implement objective function scaling at some point
+            switch obj.Objective
+                case "FlightTime"
+                    F = -f;
+                case "Range"
+                    F = -f;
+            end
+        end
+        
+        function [c,ceq] = nlcon(obj)
+            try
+                obj.updateQR();
+                
+                % QR Dependent Constraints
+                c_input = obj.QR.SS_QAve.u - 1;
+            catch
+                c_input = NaN;
+            end
+            
+            % Boundary Constraints
+            batt = obj.QR.Battery;
+            c_batt = distToBoundary(batt.Fit.Boundary, [batt.Fit.Inputs.Value]');
+            
+            prop = obj.QR.Propeller;
+            c_prop = distToBoundary(prop.Fit.Boundary, [prop.Fit.Inputs.Value]');
+            
+            motor = obj.QR.Motor;
+            c_motor = distToBoundary(motor.Fit.Boundary, [motor.Fit.Inputs.Value]');
+            
+            c = [c_batt; c_prop; c_motor; c_input];
+            ceq = [];
         end
         
         function so = sweep(obj, vars, n, opts)
