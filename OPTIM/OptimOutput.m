@@ -10,6 +10,7 @@ classdef OptimOutput
         
         exitflag
         lambda
+        lambdaDesc % Descriptions matching form of lambda struct
         grad
         hessian
         

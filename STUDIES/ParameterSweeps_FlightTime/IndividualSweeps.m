@@ -2,7 +2,7 @@ ov = o.OptiVars;
 individualSweeps = SweepData.empty();
 for i = 1:numel(ov)
     v = ov(i);
-    if ismember(v.Sym,["D","P","kV"])
+    if ismember(v.Sym,["P","kV"])
         rev_flag = true;
     else
         rev_flag = false;

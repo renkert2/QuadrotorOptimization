@@ -96,7 +96,12 @@ classdef Boundary
             plot(obj.BoundaryPoints(:,1), obj.BoundaryPoints(:,2))
             hold off
             
-            if nargin == 3
+            if nargin == 2
+                x2 = x1(2,:);
+                x1 = x1(1,:);
+            end
+            
+            if nargin > 1
                 hold on
                 plot(x1,x2, '.r', 'MarkerSize', 20)
                 hold off

@@ -1,4 +1,4 @@
-classdef Optimization < handle  
+classdef Optimization < handle      
     properties
         QR QuadRotor
         
@@ -72,6 +72,13 @@ classdef Optimization < handle
             [X_opt_s, f_opt, OO.exitflag, ~, OO.lambda, OO.grad, OO.hessian] = fmincon(@objfun ,x0, [], [], [], [], lb, ub, @(X_s) nlcon(X_s), optimopts);
             F_opt = processF(f_opt); % Transform objective function output to desired output
             OO.F_opt = F_opt;
+            
+            % Specify Descriptions for constraints
+            f = fieldnames(OO.lambda)';
+            f{2,1} = {};
+            lambda_desc = struct();
+            lambda_desc.ineqnonlin = ["Battery", "Propeller", "Motor", "Input"]; % Hardcoded for now.  Would be good to have Constraint objects at some point
+            OO.lambdaDesc = lambda_desc;
             
             obj.QR.ConstrainInput = qr_con_in_cache; 
          
