@@ -23,10 +23,9 @@ classdef optiVar < handle
     end
     
     methods
-        function obj = optiVar(child, x0, lb, ub, opts)
+        function obj = optiVar(child, lb, ub, opts)
             arguments
                 child compParam
-                x0 double = 0
                 lb double = -Inf
                 ub double = Inf
                 opts.Enabled = true
@@ -35,7 +34,6 @@ classdef optiVar < handle
             end
             
             obj.Child = child;
-            obj.x0 = x0;
             obj.lb = lb;
             obj.ub = ub;
  

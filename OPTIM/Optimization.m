@@ -4,9 +4,13 @@ classdef Optimization < handle
         OptiVars (:,1) optiVar
         
         Objective OptimObjectives = "FlightTime" 
+        
+        CD ComponentData % ComponentDatabase
+        
         SimulationBased logical = false;
         SimulationOpts cell = {'InterpolateTime', false, 'Timeout', 30} % Options pertaining to the simulation-based flight time calculation
         ReferenceTrajectory function_handle = @(t) (t>0) % Reference Trajectory used for Simulation-Based Optimization
+        
     end
     
     properties (Hidden)
@@ -14,12 +18,18 @@ classdef Optimization < handle
     end
     
     methods
-        function obj = Optimization(qr)
+        function obj = Optimization(qr, cd)
             if nargin == 0
                 load QROpt.mat QROpt;
                 qr = QROpt;
             end
+            if nargin == 1
+                load ComponentDatabase.mat ComponentDatabase;
+                cd = ComponentDatabase;
+            end
+            
             obj.QR = qr;
+            obj.CD = cd;
             obj.init();
         end
         
@@ -29,12 +39,12 @@ classdef Optimization < handle
             motor = obj.QR.Motor;
             
             % Set Optimization Variables
-            OV(1) = optiVar(prop.D, [], prop.Fit.Boundary.X_lb(1),prop.Fit.Boundary.X_ub(1));
-            OV(2) = optiVar(prop.P, [], prop.Fit.Boundary.X_lb(2), prop.Fit.Boundary.X_ub(2));            
-            OV(3) = optiVar(batt.N_s, [], batt.Fit.Boundary.X_lb(1),batt.Fit.Boundary.X_ub(1), 'Enabled', true); % Typically voltage is selected to highest possible value           
-            OV(4) = optiVar(batt.Q, [], batt.Fit.Boundary.X_lb(2),batt.Fit.Boundary.X_ub(2));
-            OV(5) = optiVar(motor.kV, [], motor.Fit.Boundary.X_lb(1), motor.Fit.Boundary.X_ub(1));
-            OV(6) = optiVar(motor.Rm, [], motor.Fit.Boundary.X_lb(2), motor.Fit.Boundary.X_ub(2));
+            OV(1) = optiVar(prop.D, prop.Fit.Boundary.X_lb(1),prop.Fit.Boundary.X_ub(1));
+            OV(2) = optiVar(prop.P, prop.Fit.Boundary.X_lb(2), prop.Fit.Boundary.X_ub(2));            
+            OV(3) = optiVar(batt.N_s, batt.Fit.Boundary.X_lb(1),batt.Fit.Boundary.X_ub(1), 'Enabled', true); % Typically voltage is selected to highest possible value           
+            OV(4) = optiVar(batt.Q, batt.Fit.Boundary.X_lb(2),batt.Fit.Boundary.X_ub(2));
+            OV(5) = optiVar(motor.kV, motor.Fit.Boundary.X_lb(1), motor.Fit.Boundary.X_ub(1));
+            OV(6) = optiVar(motor.Rm, motor.Fit.Boundary.X_lb(2), motor.Fit.Boundary.X_ub(2));
 
             obj.OptiVars = OV';
         end
@@ -47,6 +57,7 @@ classdef Optimization < handle
                 opts.OptimizationOutput logical = true
                 opts.InitializeFromValue logical = false
                 opts.CaptureState logical = true
+                opts.CheckPrevious logical = true
             end
             
             optimopts = optimoptions('fmincon', 'Algorithm', 'sqp');
@@ -86,7 +97,7 @@ classdef Optimization < handle
          
             % Set Current Values to Optimal Value in OptiVars
             setVals(obj.OptiVars, X_opt_s);
-            obj.updateQR();
+            obj.updateQR(true);
             OO.X_opt = unscale(obj.OptiVars);
             
             % Get optimal ParamVals to load later or for discrete search
@@ -99,74 +110,23 @@ classdef Optimization < handle
             
             function f = objfun_local(X_s)
                 setVals(obj.OptiVars, X_s);
-                f = objfun(obj);
+                try
+                    obj.updateQR(opts.CheckPrevious);
+                    f = objfun(obj, true);
+                catch
+                    f = objfun(obj, false);
+                end
             end
             
             function [c,ceq] = nlcon_local(X_s)
                 setVals(obj.OptiVars, X_s);
-                [c,ceq] = nlcon(obj);
-            end
-        end
-        
-        function f = objfun(obj)
-            try
-                obj.updateQR();
-            catch
-                f = NaN;
-                return
-            end
-            
-            switch obj.Objective
-                case "FlightTime"
-                    f = -flightTime();
-                case "Range"
-                    f = -obj.QR.Range();
-            end
-            
-            function ft = flightTime()
-                if obj.SimulationBased
-                    obj.QR.calcControllerGains;
-                    ft = obj.QR.flightTime(obj.ReferenceTrajectory,'SimulationBased',true, obj.SimulationOpts{:});
-                else
-                    ft = obj.QR.flightTime('SimulationBased',false);
+                try
+                    obj.updateQR(opts.CheckPrevious);
+                    [c,ceq] = nlcon(obj, true);
+                catch
+                    [c,ceq] = nlcon(obj, false);
                 end
             end
-            % implement objective function scaling at some point
-        end
-        
-        function F = processF(obj,f)
-            % Processes objective function value and returns desired value
-            % Implement objective function scaling at some point
-            switch obj.Objective
-                case "FlightTime"
-                    F = -f;
-                case "Range"
-                    F = -f;
-            end
-        end
-        
-        function [c,ceq] = nlcon(obj)
-            try
-                obj.updateQR();
-                
-                % QR Dependent Constraints
-                c_input = obj.QR.SS_QAve.u - 1;
-            catch
-                c_input = NaN;
-            end
-            
-            % Boundary Constraints
-            batt = obj.QR.Battery;
-            c_batt = distToBoundary(batt.Fit.Boundary, [batt.Fit.Inputs.Value]');
-            
-            prop = obj.QR.Propeller;
-            c_prop = distToBoundary(prop.Fit.Boundary, [prop.Fit.Inputs.Value]');
-            
-            motor = obj.QR.Motor;
-            c_motor = distToBoundary(motor.Fit.Boundary, [motor.Fit.Inputs.Value]');
-            
-            c = [c_batt; c_prop; c_motor; c_input];
-            ceq = [];
         end
         
         function so = sweep(obj, vars, n, opts)
@@ -312,14 +272,133 @@ classdef Optimization < handle
             end
         end
         
-        function updateQR(obj)
-            X = [obj.OptiVars.Value];
-            if ~isempty(obj.X_prev) && all(X == obj.X_prev)
-                return % Only update variables if the design variables have changed value
+        function [sorted_combs, sorted_fvals, pmod] = searchNearest(obj, target, N_max)
+            % CAUTION: This only works if all components of the same Type
+            % have the same parameter values.  Need to add additional 
+            % Functionality if there are two components of the same type with 
+            % different parameter values.  
+            
+            [cd,~] = filterNearest(obj.CD, target, N_max);
+            
+            if isa(cd, 'struct')
+                cd = struct2cell(cd);
+            end
+                
+            comb_array = combinations(cd{:});
+            N_combs = size(comb_array,1);
+            
+            FVals = NaN(N_combs, 1);
+            for i = 1:N_combs
+               comb = comb_array(i,:); % Array of ComponentData objects
+  
+               [FVals(i,1), pmod] = evalCombination(obj, comb);
+               
+               % Restore Dependency of Modified Parameters for next
+               % iteration
+               restoreDependentDefault(pmod);
+            end 
+            
+            % Sort component configurations from best to worst
+            [sorted_fvals,I] = sort(FVals, 'ascend');
+            sorted_combs = comb_array(I,:);
+            
+            % Set QuadRotor to Optimal Configuration
+            [~,pmod] = evalCombination(obj, sorted_combs(1));
+            
+            function [fval, pmod] = evalCombination(obj, comb)
+                cpv = vertcat(comb.Data);
+                
+                % Load Values into Parameters
+                pmod = loadValues(o.QR.Params, cpv);
+                
+                % Cache Dependency of Modified Parameters and make all
+                % Independent
+                setDependentTemporary(pmod, false); % Makes each element of pmod independent
+                
+                % Update QuadRotor
+                try
+                    updateQR(obj, false);
+                    % Check Constraints
+                    [c,~] = nlcon(obj, sucess_flag);
+                    if any(c > 0)
+                        valid = false;
+                    else
+                        valid = true;
+                    end
+                catch
+                    valid = false;
+                end
+                
+                % Evaluate and Store Objective Function
+                fval = objfun(obj, valid);
+            end
+        end
+        
+        function f = objfun(obj, success_flag)
+            if success_flag
+                switch obj.Objective
+                    case "FlightTime"
+                        f = -flightTime();
+                    case "Range"
+                        f = -obj.QR.Range();
+                end
+            else
+                f = NaN;
+            end
+            
+            function ft = flightTime()
+                if obj.SimulationBased
+                    obj.QR.calcControllerGains;
+                    ft = obj.QR.flightTime(obj.ReferenceTrajectory,'SimulationBased',true, obj.SimulationOpts{:});
+                else
+                    ft = obj.QR.flightTime('SimulationBased',false);
+                end
+            end
+            % implement objective function scaling at some point
+        end
+        
+        function F = processF(obj,f)
+            % Processes objective function value and returns desired value
+            % Implement objective function scaling at some point
+            switch obj.Objective
+                case "FlightTime"
+                    F = -f;
+                case "Range"
+                    F = -f;
+            end
+        end
+        
+        function [c,ceq] = nlcon(obj, success_flag)
+            if success_flag
+                c_input = obj.QR.SS_QAve.u - 1;
+            else
+                c_input = NaN;
+            end
+            
+            % Boundary Constraints
+            batt = obj.QR.Battery;
+            c_batt = distToBoundary(batt.Fit.Boundary, [batt.Fit.Inputs.Value]');
+            
+            prop = obj.QR.Propeller;
+            c_prop = distToBoundary(prop.Fit.Boundary, [prop.Fit.Inputs.Value]');
+            
+            motor = obj.QR.Motor;
+            c_motor = distToBoundary(motor.Fit.Boundary, [motor.Fit.Inputs.Value]');
+            
+            c = [c_batt; c_prop; c_motor; c_input];
+            ceq = [];
+        end
+        
+        function updateQR(obj, check_prev)
+            if check_prev
+                X = [obj.OptiVars.Value];
+                if ~isempty(obj.X_prev) && all(X == obj.X_prev)
+                    return % Only update variables if the design variables have changed value
+                end
+                obj.X_prev = X;
             end
             
             obj.QR.update();
-            obj.X_prev = X;
         end
     end
 end
