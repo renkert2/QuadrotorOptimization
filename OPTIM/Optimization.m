@@ -15,6 +15,7 @@ classdef Optimization < handle
     
     properties (Hidden)
         X_prev double 
+        OO_prev OptimOutput
     end
     
     methods
@@ -48,7 +49,13 @@ classdef Optimization < handle
 
             obj.OptiVars = OV';
         end
-
+        
+        function main(obj)
+            oo = o.Optimize();
+            N_max = struct('Battery', 3, 'PMSMMotor', 3, 'Propeller', 3);
+            [sorted_combs, sorted_fvals, pmod] = searchNearest(obj, oo.ParamVals, N_max);
+        end
+        
         function [OO] = Optimize(obj, opts)
             arguments
                 obj
@@ -58,6 +65,7 @@ classdef Optimization < handle
                 opts.InitializeFromValue logical = false
                 opts.CaptureState logical = true
                 opts.CheckPrevious logical = true
+                opts.RestoreDependencies logical = true % Ensure parameters with dependencies are reset to their default values before continuous optimization
             end
             
             optimopts = optimoptions('fmincon', 'Algorithm', 'sqp');
@@ -73,6 +81,10 @@ classdef Optimization < handle
                 x0 = .75*scale(obj.OptiVars) + .25*X0(obj.OptiVars);
             else
                 x0 = X0(obj.OptiVars);
+            end
+            
+            if opts.RestoreDependencies
+                restoreDependentDefault(obj.QR.Params);
             end
             
             lb = LB(obj.OptiVars);
@@ -107,6 +119,7 @@ classdef Optimization < handle
                 OO.PerformanceData = obj.QR.PerformanceData;
                 OO.DesignData = obj.QR.DesignData;
             end
+            obj.OO_prev = OO;
             
             function f = objfun_local(X_s)
                 setVals(obj.OptiVars, X_s);
@@ -272,44 +285,49 @@ classdef Optimization < handle
             end
         end
         
-        function [sorted_combs, sorted_fvals, pmod] = searchNearest(obj, target, N_max)
+        function [sorted_combs, sorted_fvals, sorted_distances, pmod] = searchNearest(obj, target, N_max)
             % CAUTION: This only works if all components of the same Type
             % have the same parameter values.  Need to add additional 
             % Functionality if there are two components of the same type with 
             % different parameter values.  
             
-            [cd,~] = filterNearest(obj.CD, target, N_max);
-            
-            if isa(cd, 'struct')
-                cd = struct2cell(cd);
-            end
-                
-            comb_array = combinations(cd{:});
+            [cd,d] = filterNearest(obj.CD, target, N_max);
+
+            [comb_array,comb_I] = combinations(cd{:});
             N_combs = size(comb_array,1);
+            
+            %sorted_distances = 
             
             FVals = NaN(N_combs, 1);
             for i = 1:N_combs
                comb = comb_array(i,:); % Array of ComponentData objects
   
-               [FVals(i,1), pmod] = evalCombination(obj, comb);
+               [FVals(i,1), ~] = evalCombination(obj, comb);
                
                % Restore Dependency of Modified Parameters for next
                % iteration
-               restoreDependentDefault(pmod);
+
             end 
             
             % Sort component configurations from best to worst
             [sorted_fvals,I] = sort(FVals, 'ascend');
-            sorted_combs = comb_array(I,:);
-            
+            sorted_combs = comb_array(I,:); % Component combinations sorted by objective
+            sorted_comb_I = comb_I(I,:); % Component Indices sorted by objective
+            sz = size(sorted_comb_I);
+            sorted_distances = NaN(sz);
+            for i_col = 1:sz(2)
+                col = d{i_col};
+                sorted_distances(:,i_col) = col(sorted_comb_I(:,i_col));
+            end
             % Set QuadRotor to Optimal Configuration
-            [~,pmod] = evalCombination(obj, sorted_combs(1));
+            [~,pmod] = evalCombination(obj, sorted_combs(1,:));
+            % All of pmod currently independent.
             
             function [fval, pmod] = evalCombination(obj, comb)
                 cpv = vertcat(comb.Data);
                 
                 % Load Values into Parameters
-                pmod = loadValues(o.QR.Params, cpv);
+                pmod = loadValues(obj.QR.Params, cpv);
                 
                 % Cache Dependency of Modified Parameters and make all
                 % Independent
@@ -318,19 +336,23 @@ classdef Optimization < handle
                 % Update QuadRotor
                 try
                     updateQR(obj, false);
-                    % Check Constraints
-                    [c,~] = nlcon(obj, sucess_flag);
-                    if any(c > 0)
-                        valid = false;
-                    else
-                        valid = true;
-                    end
+                    valid = true;
                 catch
                     valid = false;
                 end
                 
+                % Check Constraints
+                if valid
+                    [c,~] = nlcon(obj, valid);
+                    if any(c > 0)
+                        valid = false;
+                    end
+                end
+                
                 % Evaluate and Store Objective Function
                 fval = objfun(obj, valid);
+                
+                restoreDependentDefault(pmod);
             end
         end
         
