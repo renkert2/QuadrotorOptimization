@@ -2,7 +2,7 @@ load motor_data_kde
 Data = motor_data_kde;
 
 % Parameter Template
-Sym = ["M","D","kV","Rm","Io", "I_max"]';
+Sym = ["Mass","D","kV","Rm","Io", "I_max"]';
 Unit = ["kg","m","rpm/V","Ohm","A","A"]';
 Description = ["Mass", "Diameter", "Speed Constant", "Phase Resistance", "No Load Current", "Max Current"]';
 Component = repmat("PMSMMotor",numel(Sym),1);

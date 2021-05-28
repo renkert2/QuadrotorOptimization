@@ -6,7 +6,7 @@ load MotorComponentData.mat MotorComponentData;
 [t,~] = table(MotorComponentData);
 
 input_data = [t.kV, t.Rm];
-output_data = [t.M, t.D];
+output_data = [t.Mass, t.D];
 pf.setData(input_data, output_data);
 pf.setBoundary();
 
