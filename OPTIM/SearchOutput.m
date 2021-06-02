@@ -8,6 +8,8 @@ classdef SearchOutput
         SortedFVals (:,1) double
         SortedDistances (:,:) double
         NormalizedDistances(:,1) double
+        Weights
+        DistanceMode string
         ModifiedParameters (:,1) compParam
         ComponentNames string
     end

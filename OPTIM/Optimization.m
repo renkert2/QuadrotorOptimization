@@ -50,9 +50,19 @@ classdef Optimization < handle
         end
         
         function main(obj)
-            oo = o.Optimize();
+            oo = obj.Optimize();
             N_max = struct('Battery', 3, 'PMSMMotor', 3, 'Propeller', 3);
-            [sorted_combs, sorted_fvals, pmod] = searchNearest(obj, oo.ParamVals, N_max);
+            
+%             batt_weights = struct('N_s', 1, 'Q', 1);
+%             prop_weights = struct('D', 1, 'P', 1);
+%             mot_weights = struct('kV', 1, 'Rm', 1);
+
+            
+            % Combine paramVals and G, assign to WeightStruct
+            
+            
+           % WeightStruct = struct('Battery', batt_weights, 'PMSMMotor', mot_weights, 'Propeller', prop_weights);
+            so = searchNearest(obj, oo, N_max, WeightStruct);
         end
         
         function [OO] = Optimize(obj, opts)
@@ -95,15 +105,20 @@ classdef Optimization < handle
             qr_con_in_cache = obj.QR.ConstrainInput; % Save previous state of QR.ConstrainInput
             obj.QR.ConstrainInput = false; % Hand input constraint to optimization solver
             
-            [X_opt_s, f_opt, OO.exitflag, ~, OO.lambda, OO.grad, OO.hessian] = fmincon(@objfun_local ,x0, [], [], [], [], lb, ub, @nlcon_local, optimopts);
+            [X_opt_s, f_opt, OO.exitflag, ~, OO.lambda, grad_s, hessian_s] = fmincon(@objfun_local ,x0, [], [], [], [], lb, ub, @nlcon_local, optimopts);
             F_opt = obj.processF(f_opt); % Transform objective function output to desired output
             OO.F_opt = F_opt;
+            
+            s = 1./vertcat(obj.OptiVars.scaleFactors);
+            S = diag(s);
+            OO.grad = S*grad_s; % Denominator Layout Notation
+            OO.hessian = S*hessian_s*S;
             
             % Specify Descriptions for constraints
             lambda_desc = struct();
             lambda_desc.ineqnonlin = ["Battery", "Propeller", "Motor", "Input"]; % Hardcoded for now.  Would be good to have Constraint objects at some point
             OO.lambdaDesc = lambda_desc;
-            
+                
             obj.QR.ConstrainInput = qr_con_in_cache; 
          
             % Set Current Values to Optimal Value in OptiVars
@@ -283,7 +298,7 @@ classdef Optimization < handle
             end
         end
         
-        function so = searchNearest(obj, target, N_max, opts)
+        function so = searchNearest(obj, oo, N_max, opts)
             % CAUTION: This only works if all components of the same Type
             % have the same parameter values.  Need to add additional 
             % Functionality if there are two components of the same type with 
@@ -291,14 +306,30 @@ classdef Optimization < handle
             
             arguments
                 obj
-                target compParamValue
-                N_max
+                oo OptimOutput
+                N_max = inf
+                opts.DistanceMode string = "Norm" % Options: "Norm", "WeightedNorm", "TaylorSeries"
+                opts.Weights = []
+                opts.UseGradient logical = true
+                opts.UseHessian logical = true
                 opts.Display logical = false
                 opts.Plot logical = false
             end
             
+            target = oo.ParamVals;
             
-            [cd,d,comp_names] = filterNearest(obj.CD, target, N_max);
+            grad = [];
+            hessian = [];
+            if opts.DistanceMode == "TaylorSeries"
+                if opts.UseGradient
+                    grad = oo.grad; % Scale the gradient by target values
+                end
+                if opts.UseHessian
+                    hessian = oo.hessian; % Scale the hessian by target values
+                end
+            end
+            
+            [cd,d,comp_names] = filterNearest(obj.CD, target, N_max, 'DistanceMode', opts.DistanceMode, 'Weights', opts.Weights, 'Gradient', grad, 'Hessian', hessian);
 
             [comb_array,comb_I] = combinations(cd{:});
             
@@ -314,7 +345,15 @@ classdef Optimization < handle
             end
             
             % Sort component combinations by norm of distances from target
-            comb_d_norm = vecnorm(comb_d, 2, 2);
+            switch opts.DistanceMode
+                case "Norm"
+                    comb_d_norm = vecnorm(comb_d, 2, 2);
+                case "WeightedNorm"
+                    comb_d_norm = vecnorm(comb_d, 2, 2);
+                case "TaylorSeries"
+                    comb_d_norm = sum(comb_d, 2);
+            end
+            
             [sorted_d_norm, I_d] = sort(comb_d_norm);
             
             comb_array = comb_array(I_d, :);
@@ -389,6 +428,8 @@ classdef Optimization < handle
             so.NormalizedDistances = normalized_distances;
             so.ModifiedParameters = pmod;
             so.ComponentNames = comp_names;
+            so.DistanceMode = opts.DistanceMode;
+            so.Weights = opts.Weights;
             
             function [fval, pmod] = evalCombination(obj, comb, dispflag)
                 cpv = vertcat(comb.Data);
