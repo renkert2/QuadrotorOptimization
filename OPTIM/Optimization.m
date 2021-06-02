@@ -298,6 +298,191 @@ classdef Optimization < handle
             end
         end
         
+        function so = searchNearestBrute(obj, oo, N_max_search, N_max_comb, opts)
+            % CAUTION: This only works if all components of the same Type
+            % have the same parameter values.  Need to add additional 
+            % Functionality if there are two components of the same type with 
+            % different parameter values.  
+            
+            arguments
+                obj
+                oo OptimOutput
+                N_max_search = inf
+                N_max_comb (1,1) double = inf
+                opts.Display logical = false
+                opts.Plot logical = false
+            end
+            
+            target = oo.ParamVals;
+
+            % Get Initial component sets based on distance from optimal
+            % point
+            [cd,~,comp_names] = filterNearest(obj.CD, target, N_max_search);
+
+            % Cache QuadRotor Parameters
+            loadValues(obj.QR.Params, target);
+            oopv_cache = getValues(obj.QR.Params);
+            
+            d = cell(size(cd));
+            cd_sorted = cell(size(cd));
+            for i = 1:numel(d)
+                comps = cd{i};
+                N_comps = numel(comps);
+                d_objective_comp = NaN(N_comps, 1);
+                for j = 1:N_comps
+                    % Evaluate Objective
+                    [fval, ~] = evalCombination(obj, comps(j), opts.Display);
+                    % Reset QR
+                    loadValues(obj.QR.Params, oopv_cache);
+                    d_objective_comp(j) = fval;
+                end
+                [d_objective_comp_sorted, I] = sort(d_objective_comp);
+                d{i} = d_objective_comp_sorted;
+                cd_sorted{i} = comps(I); % Reassign components to cd in the new order
+            end
+            
+            % Apply second N_max here if necessary to reduce number of
+            % combinations to evaluate
+            
+            [comb_array,comb_I] = combinations(cd_sorted{:});
+            
+            sz = size(comb_array);
+            
+            
+            % comb_d: matrix of size comb_array corresponding to distance
+            % of component from target
+            comb_d = NaN(sz);
+            for i_col = 1:sz(2)
+                col = d{i_col};
+                comb_d(:,i_col) = col(comb_I(:,i_col));
+            end
+            
+            % Sort component combinations by mean objective function value
+            comb_d_norm = mean(comb_d,2);
+            [sorted_d_norm, I_d] = sort(comb_d_norm);
+            
+            comb_array = comb_array(I_d, :);
+            comb_d = comb_d(I_d, :);
+            
+            % Apply N_max_comb to restrict total number of combinations
+            N_combs = min(size(comb_array, 1), N_max_comb);
+            R = 1:N_combs;
+            comb_array = comb_array(R,:);
+            comb_d = comb_d(R,:);
+            
+            
+            if opts.Plot
+                figure('Name', 'Nearest Neighbor Search')
+                
+                % Objective Function Plot
+                ax_f = subplot(2,1,1);
+                an_f = animatedline(ax_f);
+                title("Objective Function")
+                ylabel('f')
+                
+                % Distance Plot
+                ax_d = subplot(2,1,2);
+                co = colororder; % Gets default plot colors as rgb matrix
+                for i = 1:sz(2)
+                    color = co(i,:);
+                    an_d(i) = animatedline(ax_d, 'DisplayName', comp_names(i), 'Color', color);
+                end
+                an_d_norm = animatedline(ax_d, 'DisplayName', "Norm Distance");
+                
+                title("Mean Objective Function Value")
+                ylabel('d');
+                xlabel("Iteration")
+                legend
+            end
+
+            fvals = NaN(N_combs, 1);
+            for i = 1:N_combs
+               comb = comb_array(i,:); % Array of ComponentData objects
+               
+               if opts.Display
+                    fprintf("Evaluating Configuration: %d\n", i)
+               end
+               
+               [fvals(i,1), ~] = evalCombination(obj, comb, opts.Display);
+               
+               if opts.Plot
+                   addpoints(an_f, i, fvals(i,1));
+                   for j = 1:sz(2)
+                       addpoints(an_d(j), i, comb_d(i,j))
+                   end
+                   addpoints(an_d_norm, i, sorted_d_norm(i));
+                   drawnow
+               end
+
+            end 
+            
+            % Sort component configurations from best to worst
+            [sorted_fvals,I] = sort(fvals, 'ascend');
+            sorted_combs = comb_array(I,:); % Component combinations sorted by objective
+            sorted_distances = comb_d(I,:);
+            normalized_distances = sorted_d_norm(I_d,:);
+            
+            % Set QuadRotor to Optimal Configuration
+            if opts.Display
+                disp("Optimal Configuration: ")
+            end
+            [~,pmod] = evalCombination(obj, sorted_combs(1,:), opts.Display);
+            % All of pmod currently independent.
+            
+            sorted_FVals = processF(obj, sorted_fvals);
+            
+            % Package Output
+            so = SearchOutput();
+            so.Objective = obj.Objective;
+            so.SortedComponentSets = sorted_combs;
+            so.SortedFVals = sorted_FVals;
+            so.SortedDistances = sorted_distances;
+            so.NormalizedDistances = normalized_distances;
+            so.ModifiedParameters = pmod;
+            so.ComponentNames = comp_names;
+            so.DistanceMode = "Norm";
+            
+            function [fval, pmod] = evalCombination(obj, comb, dispflag)
+                cpv = vertcat(comb.Data);
+                
+                % Load Values into Parameters
+                pmod = loadValues(obj.QR.Params, cpv);
+                
+                % Cache Dependency of Modified Parameters and make all
+                % Independent
+                setDependentTemporary(pmod, false); % Makes each element of pmod independent
+                
+                % Update QuadRotor
+                try
+                    updateQR(obj, false);
+                    valid = true;
+                catch
+                    valid = false;
+                end
+                
+                % Check Constraints
+                if valid
+                    [c,~] = nlcon(obj, valid);
+                    if any(c > 0)
+                        valid = false;
+                    end
+                end
+                
+                % Evaluate and Store Objective Function
+                fval = objfun(obj, valid);
+                
+                               
+               % Restore Dependency of Modified Parameters before returning
+                restoreDependentDefault(pmod);
+                
+                if dispflag
+                    disp("Configuration:");
+                    disp(summaryTable(comb))
+                    fprintf("Objective Function Value: %f\n\n", fval);
+                end 
+            end
+        end
+        
         function so = searchNearest(obj, oo, N_max, opts)
             % CAUTION: This only works if all components of the same Type
             % have the same parameter values.  Need to add additional 
@@ -310,6 +495,7 @@ classdef Optimization < handle
                 N_max = inf
                 opts.DistanceMode string = "Norm" % Options: "Norm", "WeightedNorm", "TaylorSeries"
                 opts.Weights = []
+                opts.Tolerance = []
                 opts.UseGradient logical = true
                 opts.UseHessian logical = true
                 opts.Display logical = false
@@ -329,7 +515,7 @@ classdef Optimization < handle
                 end
             end
             
-            [cd,d,comp_names] = filterNearest(obj.CD, target, N_max, 'DistanceMode', opts.DistanceMode, 'Weights', opts.Weights, 'Gradient', grad, 'Hessian', hessian);
+            [cd,d,comp_names] = filterNearest(obj.CD, target, N_max, 'DistanceMode', opts.DistanceMode, 'Weights', opts.Weights, 'Gradient', grad, 'Hessian', hessian, 'Tolerance', opts.Tolerance);
 
             [comb_array,comb_I] = combinations(cd{:});
             
