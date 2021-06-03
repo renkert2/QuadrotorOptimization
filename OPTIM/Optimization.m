@@ -309,6 +309,7 @@ classdef Optimization < handle
                 oo OptimOutput
                 N_max_search = inf
                 N_max_comb (1,1) double = inf
+                opts.EnforceBounds logical = true
                 opts.Display logical = false
                 opts.Plot logical = false
             end
@@ -317,7 +318,14 @@ classdef Optimization < handle
 
             % Get Initial component sets based on distance from optimal
             % point
-            [cd,~,comp_names] = filterNearest(obj.CD, target, N_max_search);
+            if opts.EnforceBounds
+                lb = vertcat(obj.OptiVars.lb);
+                ub = vertcat(obj.OptiVars.ub);
+            else
+                lb = [];
+                ub = [];
+            end
+            [cd,~,comp_names] = filterNearest(obj.CD, target, N_max_search, 'LB', lb, 'UB', ub);
 
             % Cache QuadRotor Parameters
             loadValues(obj.QR.Params, target);
@@ -363,12 +371,14 @@ classdef Optimization < handle
             
             comb_array = comb_array(I_d, :);
             comb_d = comb_d(I_d, :);
+            comb_I = comb_I(I_d, :);
             
             % Apply N_max_comb to restrict total number of combinations
             N_combs = min(size(comb_array, 1), N_max_comb);
             R = 1:N_combs;
             comb_array = comb_array(R,:);
             comb_d = comb_d(R,:);
+            comb_I = comb_I(R,:);
             
             
             if opts.Plot
@@ -380,6 +390,15 @@ classdef Optimization < handle
                 title("Objective Function")
                 ylabel('f')
                 
+                ylim=get(ax_f,'ylim');
+                xlim=get(ax_f,'xlim');
+                opt_str = sprintf("Current Optimal:\n Iteration: %d \n F: %f",0,0);
+                opt_text = text(xlim(1),ylim(2),opt_str, 'HorizontalAlignment', 'left', 'VerticalAlignment', 'top');
+                
+                hold on
+                ax_optpoint = plot(ax_f, xlim(1), ylim(1), '.r', 'MarkerSize', 20);
+                hold off
+                
                 % Distance Plot
                 ax_d = subplot(2,1,2);
                 co = colororder; % Gets default plot colors as rgb matrix
@@ -387,9 +406,9 @@ classdef Optimization < handle
                     color = co(i,:);
                     an_d(i) = animatedline(ax_d, 'DisplayName', comp_names(i), 'Color', color);
                 end
-                an_d_norm = animatedline(ax_d, 'DisplayName', "Norm Distance");
+                an_d_norm = animatedline(ax_d, 'DisplayName', "Average");
                 
-                title("Mean Objective Function Value")
+                title("Individual Objective Function Values")
                 ylabel('d');
                 xlabel("Iteration")
                 legend
@@ -405,12 +424,31 @@ classdef Optimization < handle
                
                [fvals(i,1), ~] = evalCombination(obj, comb, opts.Display);
                
+               % update optimal configuration
+               [opt_fval, opt_i] = min(fvals);  
+               opt_comb = comb_array(opt_i,:);
+                if opts.Display
+                    fprintf("Current Optimal: I = %d, Objective Function: %f\n", opt_i, opt_fval);
+                end 
+               
+               
                if opts.Plot
+                   % Update Points
                    addpoints(an_f, i, fvals(i,1));
                    for j = 1:sz(2)
                        addpoints(an_d(j), i, comb_d(i,j))
                    end
                    addpoints(an_d_norm, i, sorted_d_norm(i));
+                   
+                   % Update Optimal Point
+                   set(ax_optpoint, 'XData', opt_i, 'YData', opt_fval);
+                   
+                   % Update Optimal
+                   ylim=get(ax_f,'ylim');
+                   xlim=get(ax_f,'xlim');
+                   set(opt_text, "Position", [xlim(1), ylim(2)]);
+                   set(opt_text, "String", sprintf("Current Optimal:\n Iteration: %d \n F: %f",opt_i,opt_fval));
+                   
                    drawnow
                end
 
@@ -420,13 +458,14 @@ classdef Optimization < handle
             [sorted_fvals,I] = sort(fvals, 'ascend');
             sorted_combs = comb_array(I,:); % Component combinations sorted by objective
             sorted_distances = comb_d(I,:);
-            normalized_distances = sorted_d_norm(I_d,:);
+            sorted_component_indices = comb_I(I,:);
+            normalized_distances = sorted_d_norm(I,:);
             
             % Set QuadRotor to Optimal Configuration
             if opts.Display
-                disp("Optimal Configuration: ")
+                disp("Final Configuration: ")
             end
-            [~,pmod] = evalCombination(obj, sorted_combs(1,:), opts.Display);
+            [~,pmod] = evalCombination(obj, opt_comb, opts.Display);
             % All of pmod currently independent.
             
             sorted_FVals = processF(obj, sorted_fvals);
@@ -434,9 +473,13 @@ classdef Optimization < handle
             % Package Output
             so = SearchOutput();
             so.Objective = obj.Objective;
-            so.SortedComponentSets = sorted_combs;
+            so.OptimalConfiguration = opt_comb;
+            so.OptimalFVal = opt_fval;
+            so.OptimalIteration = opt_i;
+            so.SortedConfigurations = sorted_combs;
             so.SortedFVals = sorted_FVals;
             so.SortedDistances = sorted_distances;
+            so.SortedComponentIndices = sorted_component_indices;
             so.NormalizedDistances = normalized_distances;
             so.ModifiedParameters = pmod;
             so.ComponentNames = comp_names;

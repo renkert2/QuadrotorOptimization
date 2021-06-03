@@ -4,9 +4,13 @@ classdef SearchOutput
     
     properties
         Objective (1,1) OptimObjectives
-        SortedComponentSets (:,:) ComponentData
+        OptimalConfiguration (1,:) ComponentData
+        OptimalFVal (1,1) double
+        OptimalIteration (1,1) uint16
+        SortedConfigurations (:,:) ComponentData
         SortedFVals (:,1) double
         SortedDistances (:,:) double
+        SortedComponentIndices (:,:) double
         NormalizedDistances(:,1) double
         Weights
         DistanceMode string
@@ -15,17 +19,10 @@ classdef SearchOutput
     end
     
     properties (Dependent)
-        OptimalComponentSet (1,:) ComponentData
-        OptimalFVal (1,1) double
+
     end
     
     methods
-        function v = get.OptimalComponentSet(obj)
-            v = obj.SortedComponentSets(1,:);
-        end
-        function v = get.OptimalFVal(obj)
-            v = obj.SortedFVals(1);
-        end
         function plot(obj)
             figure('Name', 'Nearest Neighbor Search Output')
             
