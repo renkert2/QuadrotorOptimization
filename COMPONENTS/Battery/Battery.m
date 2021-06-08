@@ -88,9 +88,11 @@ classdef Battery < Component
             
             rpfun = @(N_s,N_p,R_s) N_s./N_p.*R_s;
             setDependency(obj.R_p, rpfun, [obj.N_s, obj.N_p, obj.R_s]);
+            obj.R_p.Dependent = true;
             
             capfun = @(N_p,Q) N_p.*Battery.mAhToCoulombs(Q);
             setDependency(obj.Capacity, capfun, [obj.N_p, obj.Q]);
+            obj.Capacity.Dependent = true;
         end
     end
     

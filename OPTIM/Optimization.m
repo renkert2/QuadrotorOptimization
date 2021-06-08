@@ -47,6 +47,15 @@ classdef Optimization < handle
             OV(6) = optiVar(motor.Rm, motor.Fit.Boundary.X_lb(2), motor.Fit.Boundary.X_ub(2));
 
             obj.OptiVars = OV';
+            
+            % Enable Dependencies
+            batt.R_s.Dependent = true;
+            batt.Mass.Dependent = true;
+            motor.D.Dependent = true;
+            motor.Mass.Dependent = true;
+            prop.k_P.Dependent = true;
+            prop.k_T.Dependent = true;
+            prop.Mass.Dependent = true;
         end
         
         function main(obj)
