@@ -23,7 +23,14 @@ rc_receiver_mass = 0.0157;
 
 total_frame_mass = frame_mass + autopilot_mass + gps_mass + optical_flow_mass + rc_receiver_mass;
 
-frame = Frame('Name', 'Frame', 'Mass', extrinsicProp("Mass", total_frame_mass, 'AutoRename', true, 'Tunable', true, 'Unit', "kg"));
+inertia_matrix = [0.00471826, 0.00000006, 0.00003197;...
+    0.00000006, 0.00446811, -0.00000053;...
+    0.00003197, -0.00000053, 0.00474617];
+
+d = 0.23; % m, distance from center to rotor
+
+frame = Frame('Name', 'Frame', 'Mass', extrinsicProp("Mass", total_frame_mass, 'AutoRename', true, 'Tunable', true, 'Unit', "kg"),...
+    'J_f', inertia_matrix, 'd', d);
 
 %% Battery
 % - Recommended: 4S, 5000 mAh.  Used 4s, 

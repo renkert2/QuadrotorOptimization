@@ -20,6 +20,7 @@ classdef QuadRotor < System
         % Dependent Parameters - Properties that are functions of the QuadRotor
         % Parameters
         Mass extrinsicProp
+        J compParam % Inertia Taken about COM
         
         HoverThrust function_handle % Thrust required to hover
         HoverSpeed function_handle  % Speed required to hover
@@ -129,6 +130,22 @@ classdef QuadRotor < System
             exps = obj.Params.extrinsicProps;
             masses = getProp(exps, 'Mass');
             obj.Mass = masses(end);
+            
+            % Inertia
+            J = compParam("J");
+            J.Description = "Inertia Tensor about COM";
+            J.Unit = "kg*m^2";
+            J.Parent = obj;
+            J_f = obj.Frame.J_f;
+            d = obj.Frame.d;
+            J_fun = @(m_m, m_p) J_f + ((m_m + m_p)*d^2)*diag([2,2,4]);
+            J_bkpts =  get(obj.Params,["Mass__Motor", "Mass__Propeller"]);
+            setDependency(J, J_fun, J_bkpts);
+            J.Dependent = true;
+            J.update();
+
+            obj.J = J;
+            obj.Params(end+1) = J;
             
             % Battery Pack V_OCV
             obj.V_OCV_pack = matlabFunction(p, obj.Battery.V_OCV_pack, {sym('q')});
