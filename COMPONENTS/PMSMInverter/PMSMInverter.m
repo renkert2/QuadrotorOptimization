@@ -11,7 +11,7 @@ classdef PMSMInverter < Component
         R_1 {mustBeParam} = 0.01;
         R_2 {mustBeParam} = 0;
         
-        Mass {mustBeParam} = extrinsicProp('Mass', 0.03, 'Unit', "kg");
+        Mass extrinsicProp = extrinsicProp('Mass', 0.03, 'Unit', "kg");
     end
     
     methods

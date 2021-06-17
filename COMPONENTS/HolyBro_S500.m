@@ -29,8 +29,15 @@ inertia_matrix = [0.00471826, 0.00000006, 0.00003197;...
 
 d = 0.23; % m, distance from center to rotor
 
-frame = Frame('Name', 'Frame', 'Mass', extrinsicProp("Mass", total_frame_mass, 'AutoRename', true, 'Tunable', true, 'Unit', "kg"),...
-    'J_f', inertia_matrix, 'd', d);
+frame = Frame('Name', 'Frame');
+frame.Mass.Value = total_frame_mass;
+frame.Mass.Tunable = true; 
+frame.Mass.Unit =  "kg";
+frame.J_f.Value = inertia_matrix;
+frame.J_f.Unit = 'kg*m^2';
+frame.d.Value = d;
+frame.d.Unit = 'm';
+frame.init();
 
 %% Battery
 % - Recommended: 4S, 5000 mAh.  Used 4s, 
@@ -38,7 +45,7 @@ batt = Battery('Name', 'Battery',...
     'Q', compParam('Q',4000,'Unit', 'mAh', 'AutoRename', true, 'Tunable', true),...
     'N_p', compParam('N_p',1,'Unit', 'unit', 'AutoRename', true, 'Tunable', true),...
     'N_s', compParam('N_s',4, 'Unit', 'unit', 'AutoRename', true, 'Tunable', true),... % 4000mAh, No Dynamics
-    'R_s', compParam('R_s', 4e-3/4, 'Unit', "Ohm", 'AutoRename', true, 'Tunable', true),... % Measured with Battery Charger, likely not very accurate.  R)s = N_p/N_s R_p
+    'R_s', compParam('R_s', 4e-3/4, 'Unit', "Ohm", 'AutoRename', true, 'Tunable', true),... % Measured with Battery Charger, likely not very accurate.  R_s = N_p/N_s R_p
     'Mass', extrinsicProp('Mass', 0.47735, 'Unit',"kg", 'AutoRename', true, 'Tunable', true));
  
 %% ESC (Inverter)

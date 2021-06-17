@@ -3,13 +3,13 @@ classdef Frame < SystemElement
     %   Detailed explanation goes here
     
     properties
-        Mass = extrinsicProp("Mass", 0.284 - 0.080 - 4*0.008 - 4*0.04)
-        J_f (3,3) double = NaN % Momement of inertia of frame and static components about COM
-        d double = NaN
+        Mass extrinsicProp = extrinsicProp("Mass", NaN)
+        J_f compParam = compParam('J_f',NaN, 'Unit', 'kg*m^2', 'Description', 'Inertia Tensor of Frame about its COM') % Momement of inertia of frame and static components about COM
+        d compParam = compParam('d',NaN, 'Unit', 'm', 'Description', 'Distance from center to rotor')
     end
     
-    properties (Dependent)
-        l double
+    properties (SetAccess = private)
+        l compParam
     end
     
     methods
@@ -18,8 +18,12 @@ classdef Frame < SystemElement
             obj.init_super();
         end
         
-        function l = get.l(obj)
-            l = sqrt(2)/2*obj.d;
+        function DefineParams(obj)
+            obj.l = compParam('l',NaN, 'Unit', 'm', 'Description', 'Perpendicular distance from rotor to axes', 'Dependent', true);
+            setDependency(obj.l,@(d) sqrt(2)/2*d, obj.d);
+            obj.l.update();
+            
+            DefineParams@SystemElement(obj);
         end
     end
 end
