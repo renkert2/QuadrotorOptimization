@@ -1,4 +1,8 @@
 classdef MotorProp < System
+    properties
+        J_r compParam = compParam("J_r", NaN, 'Unit', "kg*m^2", 'Description', "Rotor Inertia", 'Dependent', true);
+    end
+    
     methods
         function obj = MotorProp(opts)
             arguments
@@ -12,10 +16,24 @@ classdef MotorProp < System
             obj.Components = comps;
             obj.Name = opts.Name;
             obj.DefineElement(); % Don't want to modify parameters or children automatically, all defined explicitly below
+            obj.DefineParams();
         end
     end
     
     methods
+        function DefineParams(obj)
+            Motor = obj.Components(1);
+            Prop = obj.Components(2);
+            
+            obj.J_r.Parent = obj;
+            obj.J_r.setDependency(@(J_m, J_p) J_m + J_p, [Motor.J, Prop.J]);
+            obj.J_r.update();
+        
+            % Params
+            % I'll wait to combine the extrinsic params until the QuadRotor
+            params = unique(vertcat(Motor.Params, Prop.Params, obj.J_r));
+            obj.Params = params;
+        end
         function DefineElement(obj)
             Motor = obj.Components(1);
             Prop = obj.Components(2);
@@ -29,18 +47,16 @@ classdef MotorProp < System
             E(5).TailVertex = V(2); E(5).HeadVertex = V(5);
             
             % Modify Vertices
-            V(2).Coefficient = (Motor.J + Prop.J);
+            V(2).Coefficient = pop(obj.J_r);
             V(2).Parent = obj;
             V(4).Description = "Drag Sink";
             V(4).VertexType = 'Abstract';
             V(4).Parent = obj;
-            
-            
-            
+
             % Modify Edges
             PF = Type_PowerFlow('xt^3'); % Additional powerflow type for propeller
             E(3).PowerFlow = PF;
-            E(3).Coefficient = Prop.square_drag_coeff;
+            E(3).Coefficient = pop(Prop.K_Q);
             E(3).Parent = obj;
 
             
@@ -66,11 +82,6 @@ classdef MotorProp < System
             p(1) = ComponentPort('Description',"Voltage Input",'Element',E(1));
             p(2) = ComponentPort('Description',"Heat Sink",'Element',V(5));
             obj.Ports = p;
-            
-            % Params
-            % I'll wait to combine the extrinsic params until the QuadRotor
-            params = unique(vertcat(Motor.Params, Prop.Params));
-            obj.Params = params;
         end
     end
 end

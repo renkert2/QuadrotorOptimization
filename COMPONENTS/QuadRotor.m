@@ -47,6 +47,7 @@ classdef QuadRotor < System
         Inverter PMSMInverter
         Motor PMSMMotor
         Propeller Propeller
+        MotorProp MotorProp
     end
     
     properties (Dependent)
@@ -74,7 +75,7 @@ classdef QuadRotor < System
             pmsminverters = pmsminverters{1};
             
             motorprop = MotorProp('PMSMMotor', p.PMSMMotor, 'Propeller', p.Propeller);
-            motorprops = Replicate(motorprop, 4, 'RedefineChildren', false);
+            motorprops = Replicate(motorprop, 4, 'RedefineParams', false, 'RedefineElement', true, 'RedefineChildren', false);
             motorprops = vertcat(motorprops{:});
            
             
@@ -99,9 +100,10 @@ classdef QuadRotor < System
             obj.Inverter = p.PMSMInverter;
             obj.Motor = p.PMSMMotor;
             obj.Propeller = p.Propeller;
+            obj.MotorProp = motorprop;
             
             warning('off', 'Control:combination:connect10') % Annoying message from calcControllerGains
-            %init_post(obj);
+            init_post(obj);
         end
 
         function init_post(obj)
@@ -133,6 +135,8 @@ classdef QuadRotor < System
             
             % Inertia
             J = obj.J;
+            J.Size = [3 3];
+            J.Assumptions = "real";
             J.Description = "Inertia Tensor about COM";
             J.Unit = "kg*m^2";
             J.Parent = obj;

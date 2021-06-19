@@ -19,36 +19,20 @@ classdef Propeller < Component
         Mass extrinsicProp = extrinsicProp('Mass', 0.008, 'Unit', "kg")
         J compParam = compParam('J', 2.1075e-05,'Unit', "kg*m^2") % Rotational Inertia - kg*m^2 from "Stabilization and Control of Unmanned Quadcopter (Jiinec)
         
-        rho {mustBeParam} = 1.205 % Air Density - kg/m^3
+        rho compParam = compParam('rho', 1.205, 'Unit', "kg/m^3", 'Description', "Air Density") % Air Density - kg/m^3
+    end
+    
+    properties (SetAccess = private) % Dependent compParams
+        k_Q compParam = compParam('k_Q', NaN, 'Unit', "N/(s*kg*m)", 'Description', "Drag Torque Coefficient", 'Dependent', true) % Drag Torque Coefficient - N/(s*kg*m)=1/s^4, speed in rev/s.
+        K_Q compParam = compParam('K_Q', NaN, 'Unit', "N*m/(rad/s)^2", 'Description', "Lumped Drag Coefficient", 'Dependent', true)%square_drag_coeff %coefficient in front of speed^2 term, N*m/(rad/s)^2.
+        K_T compParam = compParam('K_T', NaN, 'Unit', "N/(rad/s)^2", 'Description', "Lumped Thrust Coefficient", 'Dependent', true)%square_thrust_coeff %coefficient in front of speed^2 term, N/(rad/s)^2. 
     end
     
     properties (SetAccess = private)
        Fit paramFit
     end
-
-    
-    properties (Dependent)
-        square_drag_coeff %coefficient in front of speed^2 term, N*m/(rad/s)^2.
-        square_thrust_coeff %coefficient in front of speed^2 term, N/(rad/s)^2.
-        
-        k_Q % Drag Torque Coefficient - N/(s*kg*m)=1/s^4, speed in rev/s.
-    end
     
     methods
-        function k_Q = get.k_Q(obj)
-            k_Q = obj.k_P / (2*pi);
-        end
-        
-        function sdc = get.square_drag_coeff(obj)
-            sdc = obj.k_Q*obj.rho*obj.D^5; % rev/s
-            sdc = obj.convCoeffToRadPerSec(sdc); % rad/s
-        end
-        
-        function stc = get.square_thrust_coeff(obj)
-            stc = obj.k_T*obj.rho*obj.D^4; % rev/s
-            stc = obj.convCoeffToRadPerSec(stc); % rad/s
-        end
-        
         function k_Q = lumpedToTorqueCoeff(obj, lumped_torque_coeff)
             k_Q = lumped_torque_coeff/(obj.rho*obj.D.^5); % rev/s
         end
@@ -58,15 +42,15 @@ classdef Propeller < Component
         end
         
         function thrust = calcThrust(obj, speed)
-            thrust = obj.square_thrust_coeff*(speed.^2);
+            thrust = obj.K_T*(speed.^2);
         end
         
         function speed = calcSpeed(obj, thrust)
-            speed = sqrt(thrust/obj.square_thrust_coeff);
+            speed = sqrt(thrust/obj.K_T);
         end
         
         function torque = calcTorque(obj, speed)
-            torque = obj.square_drag_coeff*(speed.^2);
+            torque = obj.K_Q*(speed.^2);
         end
         
         function init(obj)
@@ -77,6 +61,10 @@ classdef Propeller < Component
             obj.Fit = PropellerFit;
             
             obj.J.setDependency(@Propeller.calcInertia, [obj.Mass, obj.D]);
+            
+            obj.k_Q.setDependency(@Propeller.calcTorqueCoefficient, [obj.k_P]);
+            obj.K_Q.setDependency(@Propeller.calcLumpedTorqueCoefficient, [obj.k_Q, obj.rho, obj.D]);
+            obj.K_T.setDependency(@Propeller.calcLumpedThrustCoefficient, [obj.k_T, obj.rho, obj.D]);
         end
     end
     
@@ -101,6 +89,20 @@ classdef Propeller < Component
         
         function J = calcInertia(M,D)
             J = 1/12*M.*D.^2;
+        end
+        
+        function k_Q = calcTorqueCoefficient(k_P)
+            k_Q = k_P / (2*pi);
+        end
+        
+        function K_Q = calcLumpedTorqueCoefficient(k_Q, rho, D)
+            sdc = k_Q*rho*D^5; % rev/s
+            K_Q = Propeller.convCoeffToRadPerSec(sdc); % rad/s
+        end
+        
+        function K_T = calcLumpedThrustCoefficient(k_T, rho, D)
+            stc = k_T*rho*D^4; % rev/s
+            K_T = Propeller.convCoeffToRadPerSec(stc); % rad/s
         end
     end
     
@@ -133,7 +135,7 @@ classdef Propeller < Component
             
             E(2) = GraphEdge_Internal(...
                 'PowerFlow',P(2),...
-                'Coefficient',obj.square_drag_coeff,...
+                'Coefficient',pop(obj.K_Q),...
                 'TailVertex',V(1),...
                 'HeadVertex',V(3));
             

@@ -80,4 +80,5 @@ prop = setQRS500AeroCoeffs(prop); % Sets k_P and k_T from experimental data
 
 %%
 QR_S500 = QuadRotor('Frame', frame, 'Battery', batt, 'PMSMInverter', esc, 'Propeller', prop, 'PMSMMotor', motor);
+QR_S500.Params.update();
 save QR_S500.mat QR_S500
