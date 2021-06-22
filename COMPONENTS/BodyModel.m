@@ -108,6 +108,51 @@ classdef BodyModel < Model
             
             obj.g_sym = x;
         end
+        
+        function plot(obj, t, x, interval)
+            translations = x(obj.I.x.p, 1:interval:end)';
+            rotations = eul2quat([1 -1 1].*fliplr(x(obj.I.x.Theta, 1:interval:end)'),'ZYX');
+            plotTransforms(translations,rotations,...
+                'MeshFilePath','multirotor.stl','InertialZDirection',"down")
+        end
+        
+        function animate(obj, t, x)
+            trans = x(obj.I.x.p, :)';
+            rots = eul2quat([1 -1 -1].*fliplr(x(obj.I.x.Theta, :)'),'ZYX');
+            t_diff = diff(t);
+            
+            f = figure(1);
+            ax = axes(f);
+            rangeFun = @(i) [min(trans(:,i))-1, max(trans(:,i))+1];
+            xlim(ax, rangeFun(1));
+            ylim(ax, fliplr(-rangeFun(2)));
+            zlim(ax, fliplr(-rangeFun(3)));
+            daspect([1 1 1])
+            grid on
+            view(ax, 3)
+
+            ln = animatedline(ax);
+            
+            meshPath = robotics.internal.validation.findFilePath('multirotor.stl', 'plotTransforms', 'MeshFilePath');
+            inertialZDirection = 'down';
+            parentAx = ax;
+            painter = robotics.core.internal.visualization.TransformPainter(parentAx, meshPath, false);
+            painter.Color = [1 0 0];
+            painter.Size = 1;
+            painter.InertialZDownward = strcmp(inertialZDirection, 'down');
+            hMeshTransform = painter.paintAt(trans(1, :), rots(1, :));
+            
+            tic()
+            for i = 2:numel(t)
+                painter.move(hMeshTransform, trans(i, :), rots(i, :));
+                addpoints(ln, trans(i,1), -trans(i,2), -trans(i,3));
+                plt_time = toc();
+                pause(t_diff(i-1) - plt_time+1/10)
+                tic();
+                drawnow
+            end
+        end
+        
     end
     methods (Static)
         function w = W(phi,theta)
