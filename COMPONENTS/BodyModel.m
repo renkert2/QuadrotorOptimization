@@ -5,8 +5,8 @@ classdef BodyModel < Model
     end
     
     properties (SetAccess = private)
-        StateSyms string
-        InputSyms string
+        StateSyms (:,1) string
+        InputSyms (:,1) string
         I struct % State and Input Indices
     end
     
@@ -54,17 +54,21 @@ classdef BodyModel < Model
                 
                 obj.Params = compParam.gatherObjectParams(obj);
                 obj.Params.update();
+                
+                obj.init();
             end
         end
         
         function init(obj)
+            for i = 1:numel(obj.Params)
+                obj.Params(i).Tunable = true;
+            end
             obj.setSymVars();
-            setF(obj)
-            setG(obj)
+            setModelSymFunctions(obj)
             init@Model(obj);
         end
         
-        function setF(obj)
+        function setModelSymFunctions(obj)
             x = obj.SymVars.x;
             p = x(obj.I.x.p);
             v = x(obj.I.x.v);
@@ -98,12 +102,11 @@ classdef BodyModel < Model
             G_a = J_r*([-1 1 -1 1]*omega_tilde)*(cross(e_3, omega));
 
             obj.f_sym = [v;...
-                W*omega;...
                 g*e_3 + (1/m)*Rbe*(-f*e_3);...
+                W*omega;...
                 inv(J)*(-cross(omega, J*omega) + tau + G_a)];   
-        end
-        
-        function update(obj)
+            
+            obj.g_sym = x;
         end
     end
     methods (Static)
