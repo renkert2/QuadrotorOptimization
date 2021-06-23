@@ -1,13 +1,14 @@
 bm = BodyModel(QR_S500.Params);
 lm = getLinearModel(bm);
 
-sim_h = makeSimulinkModel(bm, 'BodyModel_Simulink');
+modelName = 'BodyModel_Simulink';
+sim_h = makeSimulinkModel(bm, modelName);
 open_system(sim_h)
 mdlWks = get_param(sim_h, 'ModelWorkspace');
 %%
 x_ss = zeros(12,1);
 u_ss = bm.calcSteadyStateInput(x_ss, [], repmat(580,4,1));
-assignin(mdlWks, 'HoverSpeed', u_ss);
+assignin(mdlWks, 'u_ss', u_ss);
 
 %%
 x_des  = zeros(12,1);
@@ -35,4 +36,7 @@ assignin(mdlWks, 'A_m', A_m);
 assignin(mdlWks, 'B_m', B_m);
 assignin(mdlWks, 'C_m', C_m);
 assignin(mdlWks, 'D_m', D_m);
+
+%% Simulate
+
 

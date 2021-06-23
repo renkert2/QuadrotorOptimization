@@ -21,6 +21,7 @@ classdef BodyModel < Model
     
     methods
         function obj = BodyModel(params)
+            obj.Name = "QuadrotorBodyModel";
             obj.Nx = 12;
             obj.Nu = 4;
             obj.Nd = 0;
@@ -110,44 +111,86 @@ classdef BodyModel < Model
         end
         
         function plot(obj, t, x, interval)
-            translations = x(obj.I.x.p, 1:interval:end)';
-            rotations = eul2quat([1 -1 1].*fliplr(x(obj.I.x.Theta, 1:interval:end)'),'ZYX');
-            plotTransforms(translations,rotations,...
-                'MeshFilePath','multirotor.stl','InertialZDirection',"down")
-        end
-        
-        function animate(obj, t, x)
-            trans = x(obj.I.x.p, :)';
-            rots = eul2quat([1 -1 -1].*fliplr(x(obj.I.x.Theta, :)'),'ZYX');
-            t_diff = diff(t);
+            trans = x(:,obj.I.x.p);
+            rots = eul2quat([1 -1 -1].*fliplr(x(:,obj.I.x.Theta)),'ZYX');
             
-            f = figure(1);
+            trans_paint = trans(1:interval:end, :);
+            rots_paint = rots(1:interval:end, :);
+            
+            f = figure;
             ax = axes(f);
+            
+            ln = plot3(ax, trans(:,1), -trans(:,2), -trans(:,3));
+            
+            daspect([1 1 1])
+            grid on
+            view(ax, 3)
             rangeFun = @(i) [min(trans(:,i))-1, max(trans(:,i))+1];
             xlim(ax, rangeFun(1));
             ylim(ax, fliplr(-rangeFun(2)));
             zlim(ax, fliplr(-rangeFun(3)));
+            title("QuadRotor Trajectory Plot")
+            xlabel("$$x$$", 'Interpreter', 'latex')
+            ylabel("$$-y$$", 'Interpreter', 'latex')
+            zlabel("$$-z$$", 'Interpreter', 'latex')
+
+            meshPath = robotics.internal.validation.findFilePath('multirotor.stl', 'plotTransforms', 'MeshFilePath');
+            inertialZDirection = 'down';
+            painter = robotics.core.internal.visualization.TransformPainter(ax, meshPath, false);
+            painter.Color = [1 0 0];
+            painter.Size = 1;
+            painter.InertialZDownward = strcmp(inertialZDirection, 'down');
+            
+            for i = 1:size(trans_paint, 1)
+                painter.paintAt(trans_paint(i,:), rots_paint(i,:));
+            end
+            
+            legend(ax, ...
+                [painter.HandleXAxis, painter.HandleYAxis, ...
+                painter.HandleZAxis, ln], ...
+                'Body X axis', 'Body Y axis', 'Body Z axis', 'Trajectory');
+        end
+        
+        function animate(obj, t, x)
+            trans = x(:,obj.I.x.p);
+            rots = eul2quat([1 -1 -1].*fliplr(x(:, obj.I.x.Theta)),'ZYX');
+            t_diff = diff(t);
+            
+            f = figure;
+            ax = axes(f);
             daspect([1 1 1])
             grid on
             view(ax, 3)
+            rangeFun = @(i) [min(trans(:,i))-1, max(trans(:,i))+1];
+            xlim(ax, rangeFun(1));
+            ylim(ax, fliplr(-rangeFun(2)));
+            zlim(ax, fliplr(-rangeFun(3)));
+            title("QuadRotor Trajectory Animation")
+            xlabel("$$x$$", 'Interpreter', 'latex')
+            ylabel("$$-y$$", 'Interpreter', 'latex')
+            zlabel("$$-z$$", 'Interpreter', 'latex')
 
             ln = animatedline(ax);
             
             meshPath = robotics.internal.validation.findFilePath('multirotor.stl', 'plotTransforms', 'MeshFilePath');
             inertialZDirection = 'down';
-            parentAx = ax;
-            painter = robotics.core.internal.visualization.TransformPainter(parentAx, meshPath, false);
+            painter = robotics.core.internal.visualization.TransformPainter(ax, meshPath, false);
             painter.Color = [1 0 0];
             painter.Size = 1;
             painter.InertialZDownward = strcmp(inertialZDirection, 'down');
             hMeshTransform = painter.paintAt(trans(1, :), rots(1, :));
+            
+            legend(ax, ...
+                [painter.HandleXAxis, painter.HandleYAxis, ...
+                painter.HandleZAxis, ln], ...
+                'Body X axis', 'Body Y axis', 'Body Z axis', 'Trajectory');
             
             tic()
             for i = 2:numel(t)
                 painter.move(hMeshTransform, trans(i, :), rots(i, :));
                 addpoints(ln, trans(i,1), -trans(i,2), -trans(i,3));
                 plt_time = toc();
-                pause(t_diff(i-1) - plt_time+1/10)
+                pause(t_diff(i-1) - plt_time)
                 tic();
                 drawnow
             end
