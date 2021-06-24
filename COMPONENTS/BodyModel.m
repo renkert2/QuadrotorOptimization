@@ -195,7 +195,6 @@ classdef BodyModel < Model
                 drawnow
             end
         end
-        
     end
     methods (Static)
         function w = W(phi,theta)
