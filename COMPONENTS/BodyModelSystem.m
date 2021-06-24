@@ -10,6 +10,8 @@ classdef BodyModelSystem < handle
         LM LinearModel
         Wks Simulink.ModelWorkspace
         
+        RefTraj ReferenceTrajectory3D
+        
         x_ss double
         u_ss double
     end
@@ -25,11 +27,17 @@ classdef BodyModelSystem < handle
             end
         end
         
-        function sim_h = init(obj)
+        function sim_h = init(obj)            
             obj.LM = getLinearModel(obj.BM);
             
             sim_h = makeSimulinkModel(obj.BM, obj.Name);
             obj.Wks = get_param(sim_h, 'ModelWorkspace');
+            
+            obj.RefTraj = ReferenceTrajectory3D();
+            obj.RefTraj.Speed = 1;
+            obj.RefTraj.Lemniscate('a',10, 'PotatoChipHeight', 2);
+            obj.RefTraj.init();
+            obj.setRefTraj();
             
             obj.x_ss = zeros(12,1);
             obj.u_ss = obj.BM.calcSteadyStateInput(obj.x_ss, [], repmat(580,4,1));
@@ -43,6 +51,14 @@ classdef BodyModelSystem < handle
             simOut = sim(obj.Name);
             t = simOut.tout;
             y = simOut.yout;
+        end
+        
+        function setRefTraj(obj, speed)
+            if nargin == 2
+                obj.RefTraj.Speed = speed;
+            end
+            ts = obj.RefTraj.TimeSeries();
+            assignin(obj.Wks, 'ref_traj', ts);
         end
         
         function setP_des(obj, p_des)

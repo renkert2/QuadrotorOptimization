@@ -34,8 +34,8 @@ classdef ReferenceTrajectory3D < handle
                         case "AsymetricLemniscate"
                     end
                 end
+                init(obj);
             end
-            init(obj);
         end
         
         function plot(obj, t, varargin)
@@ -72,15 +72,32 @@ classdef ReferenceTrajectory3D < handle
         end
         
         function init(obj)
+            setDerivatives(obj);
+            setInterpolation(obj);
+        end
+        
+        function ts = TimeSeries(obj, cycles)
+            arguments
+                obj
+                cycles double = 1
+            end
+            t_single = obj.s/obj.Speed;
+            delta = mean(diff(t_single));
+            t = t_single;
+            for i = 2:cycles
+                t_last = t(end);
+                t = [t, (t_last + delta + t_single)];
+            end
+
+            data = repmat([obj.x_interp; obj.y_interp; obj.z_interp], [1 cycles]);
             
+            ts = timeseries(data, t);
         end
         
         function setXYZ(obj,x,y,z)
             obj.x = x;
             obj.y = @(t) -y(t);
             obj.z = @(t) -z(t);
-            
-            setDerivatives(obj)
         end
         
         function setDerivatives(obj)
