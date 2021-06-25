@@ -110,29 +110,56 @@ classdef BodyModel < Model
             obj.g_sym = x;
         end
         
-        function plot(obj, t, x, interval)
+        function [ax] = plot(obj, x, opts)
+            arguments
+                obj
+                x double
+                opts.Interval double = 10
+                opts.ParentAxes matlab.graphics.axis.Axes = matlab.graphics.axis.Axes.empty()
+                opts.RefTraj ReferenceTrajectory3D = ReferenceTrajectory3D.empty()
+                opts.Annotate logical = true
+            end
+                
             trans = x(:,obj.I.x.p);
             rots = eul2quat([1 -1 -1].*fliplr(x(:,obj.I.x.Theta)),'ZYX');
             
-            trans_paint = trans(1:interval:end, :);
-            rots_paint = rots(1:interval:end, :);
+            trans_paint = trans(1:opts.Interval:end, :);
+            rots_paint = rots(1:opts.Interval:end, :);
             
-            f = figure;
-            ax = axes(f);
+            if ~isempty(opts.ParentAxes)
+                ax = opts.ParentAxes;
+            else
+                f = figure();
+                f.Position = [300 425 1100 550];
+                ax = axes(f);
+            end
             
-            ln = plot3(ax, trans(:,1), -trans(:,2), -trans(:,3));
+            if ~isempty(opts.RefTraj)
+                ln_ref_flag = true;
+                ln_ref = opts.RefTraj.plot('ParentAxes', ax);
+            else
+                ln_ref_flag = false;
+            end
+            
+            hold on
+            ln = plot3(ax, trans(:,1), -trans(:,2), -trans(:,3), '-k');
+            hold off
+            
             
             daspect([1 1 1])
             grid on
             view(ax, 3)
-            rangeFun = @(i) [min(trans(:,i))-1, max(trans(:,i))+1];
-            xlim(ax, rangeFun(1));
-            ylim(ax, fliplr(-rangeFun(2)));
-            zlim(ax, fliplr(-rangeFun(3)));
-            title("QuadRotor Trajectory Plot")
-            xlabel("$$x$$", 'Interpreter', 'latex')
-            ylabel("$$-y$$", 'Interpreter', 'latex')
-            zlabel("$$-z$$", 'Interpreter', 'latex')
+            axis padded
+%            rangeFun = @(i) [min(trans(:,i))-1, max(trans(:,i))+1];
+%             xlim(ax, rangeFun(1));
+%             ylim(ax, fliplr(-rangeFun(2)));
+%             zlim(ax, fliplr(-rangeFun(3)));
+            if opts.Annotate
+                title("QuadRotor Trajectory Plot")
+                xlabel("$$x$$", 'Interpreter', 'latex')
+                ylabel("$$-y$$", 'Interpreter', 'latex')
+                zlabel("$$-z$$", 'Interpreter', 'latex')
+            end
 
             meshPath = robotics.internal.validation.findFilePath('multirotor.stl', 'plotTransforms', 'MeshFilePath');
             inertialZDirection = 'down';
@@ -145,32 +172,67 @@ classdef BodyModel < Model
                 painter.paintAt(trans_paint(i,:), rots_paint(i,:));
             end
             
-            legend(ax, ...
-                [painter.HandleXAxis, painter.HandleYAxis, ...
-                painter.HandleZAxis, ln], ...
-                'Body X axis', 'Body Y axis', 'Body Z axis', 'Trajectory');
+            painter.HandleXAxis.DisplayName = 'Body X axis';
+            painter.HandleYAxis.DisplayName = 'Body Y axis';
+            painter.HandleZAxis.DisplayName = 'Body Z axis';
+            ln.DisplayName = 'Trajectory';
+            
+            if opts.Annotate
+                lgnd_children = [ln, painter.HandleXAxis, painter.HandleYAxis, painter.HandleZAxis];
+                lgnd_labels = ["Trajectory", "Body X axis", "Body Y axis", "Body Z axis"];
+                if ln_ref_flag
+                    lgnd_children = [ln_ref, lgnd_children];
+                    lgnd_labels = ["Reference Trajectory", lgnd_labels];
+                end
+                legend(ax, lgnd_children, lgnd_labels)
+            end
         end
         
-        function animate(obj, t, x)
+        function ax = animate(obj, t, x, opts)
+            arguments
+                obj
+                t double
+                x double
+                opts.ParentAxes matlab.graphics.axis.Axes = matlab.graphics.axis.Axes.empty()
+                opts.RefTraj ReferenceTrajectory3D = ReferenceTrajectory3D.empty()
+            end
+            
             trans = x(:,obj.I.x.p);
             rots = eul2quat([1 -1 -1].*fliplr(x(:, obj.I.x.Theta)),'ZYX');
             t_diff = diff(t);
             
-            f = figure;
-            ax = axes(f);
+            if ~isempty(opts.ParentAxes)
+                ax = opts.ParentAxes;
+            else
+                f = figure();
+                f.Position = [300 425 1100 550];
+                ax = axes(f);
+            end
+            
+            if ~isempty(opts.RefTraj)
+                ref_flag = true;
+                ln_ref = opts.RefTraj.plot('ParentAxes', ax);
+                final_ref_t =  opts.RefTraj.t(end);
+            else
+                ref_flag = false;
+            end
+            
             daspect([1 1 1])
             grid on
             view(ax, 3)
-            rangeFun = @(i) [min(trans(:,i))-1, max(trans(:,i))+1];
-            xlim(ax, rangeFun(1));
-            ylim(ax, fliplr(-rangeFun(2)));
-            zlim(ax, fliplr(-rangeFun(3)));
+            axis padded
             title("QuadRotor Trajectory Animation")
             xlabel("$$x$$", 'Interpreter', 'latex')
             ylabel("$$-y$$", 'Interpreter', 'latex')
             zlabel("$$-z$$", 'Interpreter', 'latex')
-
+            
+            hold on
             ln = animatedline(ax);
+            if ref_flag
+                [~,x,y,z] = R_t(opts.RefTraj, t(1));
+                ref_point = plot3(x,y,z,'.r','MarkerSize',20);
+            end
+            hold off
             
             meshPath = robotics.internal.validation.findFilePath('multirotor.stl', 'plotTransforms', 'MeshFilePath');
             inertialZDirection = 'down';
@@ -180,15 +242,27 @@ classdef BodyModel < Model
             painter.InertialZDownward = strcmp(inertialZDirection, 'down');
             hMeshTransform = painter.paintAt(trans(1, :), rots(1, :));
             
-            legend(ax, ...
-                [painter.HandleXAxis, painter.HandleYAxis, ...
-                painter.HandleZAxis, ln], ...
-                'Body X axis', 'Body Y axis', 'Body Z axis', 'Trajectory');
+            painter.HandleXAxis.DisplayName = 'Body X axis';
+            painter.HandleYAxis.DisplayName = 'Body Y axis';
+            painter.HandleZAxis.DisplayName = 'Body Z axis';
+            ln.DisplayName = 'Trajectory';
+
+            lgnd_children = [ln, painter.HandleXAxis, painter.HandleYAxis, painter.HandleZAxis];
+            lgnd_labels = ["Trajectory", "Body X axis", "Body Y axis", "Body Z axis"];
+            if ref_flag
+                lgnd_children = [ln_ref, lgnd_children];
+                lgnd_labels = ["Reference Trajectory", lgnd_labels];
+            end
+            legend(ax, lgnd_children, lgnd_labels)
             
             tic()
             for i = 2:numel(t)
                 painter.move(hMeshTransform, trans(i, :), rots(i, :));
                 addpoints(ln, trans(i,1), -trans(i,2), -trans(i,3));
+                if ref_flag
+                    [~,x,y,z] = R_t(opts.RefTraj, min(t(i), final_ref_t));
+                    set(ref_point, 'XData', x, 'YData', -y, 'ZData', -z)
+                end
                 plt_time = toc();
                 pause(t_diff(i-1) - plt_time)
                 tic();

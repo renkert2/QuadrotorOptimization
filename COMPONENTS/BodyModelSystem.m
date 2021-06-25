@@ -47,17 +47,32 @@ classdef BodyModelSystem < handle
             setP_des(obj);
         end
         
-        function [t,y] = Simulate(obj)
+        function [t,y,r] = Simulate(obj)
             simOut = sim(obj.Name);
             t = simOut.tout;
-            y = simOut.yout;
+            y = get(simOut.yout, 'y_out').Values.Data;
+            r = get(simOut.yout, 'r_out').Values.Data;
         end
         
-        function setRefTraj(obj, speed)
-            if nargin == 2
-                obj.RefTraj.Speed = speed;
+        function ax = plot(obj, varargin)
+            ax = obj.BM.plot(varargin{:}, 'RefTraj', obj.RefTraj);
+        end
+        
+        function ax = animate(obj, varargin)
+            ax = obj.BM.animate(varargin{:}, 'RefTraj', obj.RefTraj);
+        end
+        
+        function setRefTraj(obj, opts)
+            arguments
+                obj
+                opts.Speed double = []
+                opts.Cycles double = 1
             end
-            ts = obj.RefTraj.TimeSeries();
+            
+            if opts.Speed
+                obj.RefTraj.Speed = opts.Speed;
+            end
+            ts = obj.RefTraj.setTimeSeries(opts.Cycles);
             assignin(obj.Wks, 'ref_traj', ts);
         end
         
