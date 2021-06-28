@@ -3,7 +3,7 @@ classdef Frame < SystemElement
     %   Detailed explanation goes here
     
     properties
-        Mass extrinsicProp = extrinsicProp("Mass", NaN)
+        Mass extrinsicProp = extrinsicProp("Mass", NaN, 'Unit', 'kg')
         J_f compParam = compParam('J_f',NaN(3), 'Unit', 'kg*m^2', 'Assumptions', "real", 'Description', 'Inertia Tensor of Frame about its COM') % Momement of inertia of frame and static components about COM
         d compParam = compParam('d',NaN, 'Unit', 'm', 'Description', 'Distance from center to rotor')
     end

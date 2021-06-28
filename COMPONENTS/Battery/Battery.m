@@ -23,10 +23,7 @@ classdef Battery < Component
     properties (SetAccess = private)
         R_p compParam = compParam('R_p', NaN, 'Unit', "Ohm", 'Description', 'Pack Resistance') % Dependent compParam, pack resistance
         Capacity compParam = compParam('Capacity', NaN, 'Unit', "Amp*second", 'Description', 'Pack Capacity'); % Dependent compParam A*s
-    end
-        
-    properties (Dependent)
-        V_OCV_pack
+        V_OCV_pack function_handle % Depends on q
     end
     
     properties (SetAccess = private)
@@ -39,10 +36,6 @@ classdef Battery < Component
     end
     
     methods        
-        function V = get.V_OCV_pack(obj)
-           V = obj.N_s*obj.V_OCV_nominal*obj.V_OCV_curve;
-        end
-        
         function setV_OCV_curve(obj,arg)
             if isa(arg, 'BattLookup')
                 vocv = obj.fitV_OCV(arg.SOC, arg.V_OCV, arg.V_OCV_nominal);
@@ -93,6 +86,9 @@ classdef Battery < Component
             capfun = @(N_p,Q) N_p.*Battery.mAhToCoulombs(Q);
             setDependency(obj.Capacity, capfun, [obj.N_p, obj.Q]);
             obj.Capacity.Dependent = true;
+            
+            V_pack_sym = obj.N_s.*obj.V_OCV_nominal.*obj.V_OCV_curve;
+            obj.V_OCV_pack = matlabFunction([obj.N_s], V_pack_sym, {sym('q')});
         end
     end
     
