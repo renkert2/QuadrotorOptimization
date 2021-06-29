@@ -1,9 +1,18 @@
 classdef PowerTrain_SimpleModel < Model
     %POWERTRAIN_SIMPLEMODEL Modifies PowerTrain Model with simplifying
-    %assumptions
+    %assumptions  
+    properties
+        ConstrainInput logical = true
+    end
+    properties (Hidden)
+        SteadyState_func function_handle % Used in solved for 0, i.e. solve(obj.SteadyState_func == 0)
+        SteadyStateIO_func function_handle % Solved for 0 in calcSteadyStateIO
+    end
+    
     methods
         function obj = PowerTrain_SimpleModel(pt_model)
             obj = obj@Model();
+            obj.Name = "QuadrotorSimplePowerTrainModel";
             
             % STATES
             %dyn_eqns dot(x) = dyn_eqns(x)
@@ -51,6 +60,12 @@ classdef PowerTrain_SimpleModel < Model
             obj.init();
         end
         
+        function init(obj)
+            init@Model(obj);
+            setSteadyStateFunc(obj);
+            setSteadyStateIOFunc(obj);
+        end
+        
         function lm = getLinearModel(obj) % Overrides default method in Model
             u_mod = obj.SymVars.u;
             
@@ -66,6 +81,7 @@ classdef PowerTrain_SimpleModel < Model
             D = jacobian(g_sym_mod, u_mod);
             
             lm = LinearModel();
+            lm.Name = obj.Name + "_Linearized";
             lm.Nx = 2;
             lm.Nu = 1;
             lm.Nd = 1; % Treat battery SOC as disturbance
@@ -92,6 +108,97 @@ classdef PowerTrain_SimpleModel < Model
             lm.g0_sym = zeros(lm.Ny,1);
             
             lm.init();
+        end
+        
+        function setSteadyStateFunc(obj)
+            solve_vars = [sym('u1'); sym('x2')];
+            subs_vars = [sym('x1'); sym('x3')];
+            
+            args = {solve_vars, subs_vars};
+            
+            obj.SteadyState_func = matlabFunction(obj.Params, obj.f_sym(2:end), args);
+        end
+        
+        function setSteadyStateIOFunc(obj)
+            solve_vars = [sym('x2'); sym('x3')];
+            subs_vars = [sym('u1'); sym('x1')];
+            
+            args = {solve_vars, subs_vars};
+            
+            obj.SteadyStateIO_func = matlabFunction(obj.Params, obj.f_sym(2:end),args);
+        end
+        
+        function [x_bar, u_bar, y_bar] = calcSteadyState(obj, rotor_speed, q_bar, x0, opts)
+            % Calculates steady-state values of the powertrain model at thrust T_reqd, returns QRSteadyState object
+            % Default value for q_bar is the average battery soc
+            % Default value fot T_reqd is the HoverThrust
+            % Overrides built-in Model method
+            
+            arguments
+                obj
+                rotor_speed double
+                q_bar double
+                x0 double
+                opts.SolverOpts struct = optimset('Display','off');
+            end
+
+            [x_sol, ~, exit_flag] = fsolve(@(x) obj.SteadyState_func(x,[q_bar;rotor_speed]), x0, opts.SolverOpts);
+            if exit_flag <= 0
+                error('No solution found');
+            end
+            if obj.ConstrainInput
+                if x_sol(1) > 1
+                    error('No valid solution.  Required input exceeds 1');
+                elseif x_sol(1) < 0
+                    error('No valid solution.  Required input must be positive');
+                end
+            end
+
+            x_bar = [q_bar; x_sol(2:end); rotor_speed];
+            u_bar = x_sol(1);
+            y_bar = obj.CalcG(x_bar, u_bar, []);
+        end
+        
+        function [x_bar, u_bar, y_bar] = calcSteadyStateIO(obj, u, q_bar, x0, opts)
+            % Calculates steady-state thrust given input u, battery SOC q
+            % Default value for q is average battery soc
+            % Overrides calcSteadyStateInput Model method
+            arguments
+                obj
+                u double
+                q_bar double
+                x0 double
+                opts.SolverOpts = optimset('Display','off');
+            end
+
+            [x_sol, ~, exit_flag] = fsolve(@(x) obj.SteadyStateIO_func(x,[u;q_bar]), x0, opts.SolverOpts);
+            if exit_flag <= 0
+                error('No solution found');
+            end
+            
+            x_bar = [q_bar; x_sol];
+            u_bar = u;
+            y_bar = obj.CalcG(x_bar, u_bar, []);
+        end
+        
+        function u_bar_func = calcSteadyStateInputFunc(obj, rotor_speed, x0, opts)
+            arguments
+                obj
+                rotor_speed double
+                x0 double
+                opts.Resolution double = 0.01
+            end
+            
+            solver_opts = optimset('Display','off');
+            
+            q_vals = 0:opts.Resolution:1;
+            u0_vals = zeros(size(q_vals));
+            for i = 1:numel(q_vals)
+                [~,u_bar,~] = calcSteadyState(obj, rotor_speed, q_vals(i), x0, 'SolverOpts', solver_opts);
+                u0_vals(i) = u_bar;
+            end
+            
+            u_bar_func = @(q) interp1(q_vals, u0_vals, q, 'pchip');
         end
     end
     

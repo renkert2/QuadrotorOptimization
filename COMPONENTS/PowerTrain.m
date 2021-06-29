@@ -1,9 +1,14 @@
 classdef PowerTrain < System
     %POWERTRAINMODEL Summary of this class goes here
     %   Detailed explanation goes here
+    properties (Constant)
+        SpeedOutputs_I double = [3;5;7;9];
+    end
     
     properties
         SimpleModel PowerTrain_SimpleModel
+        
+        Model_x0 double = [1 0 0 0 0 0 0 0 0]'
     end
     
     properties (SetAccess = private)
@@ -60,15 +65,71 @@ classdef PowerTrain < System
         
         function init_post(obj)
             createModel(obj);
-            obj.SimpleModel = PowerTrain_SimpleModel(obj.Model);
-            setParamQuantities(obj);
+            obj.Model.Name = "QuadrotorPowerTrainModel";
+            
+            obj.SimpleModel = PowerTrain_SimpleModel(obj.Model); % Name set inside this subclass
         end
         
-        function setParamQuantities(obj)
-            % Rotor Speed Function
-            % - Calculates required rotor speed as a function of total
-            % thrust
+        function ptss = calcSteadyState(obj, rotor_speed, q_bar)
+            % Calculates steady-state values of the powertrain model at thrust T_reqd, returns QRSteadyState object
+            % Default value for q_bar is the average battery soc
+            % Default value fot T_reqd is the HoverThrust
+            % Overrides built-in Model method
             
+            arguments
+                obj 
+                rotor_speed double
+                q_bar double = []
+            end
+            
+            if isempty(q_bar)
+                q_bar = obj.Battery.Averaged_SOC;
+            end
+            
+            x0 = [0.5; 1];
+            
+            [x_bar, u_bar, y_bar] = calcSteadyState(obj.SimpleModel, rotor_speed, q_bar, x0);
+            
+            ptss = PowerTrainState();
+            ptss.q = q_bar;
+            ptss.x = x_bar;
+            ptss.u = u_bar;
+            ptss.y = y_bar;
+            ptss.BatteryOCV = obj.Battery.V_OCV_pack(q_bar);
+        end
+        
+        function ptss = calcSteadyStateIO(obj, u, rotor_speed_init, q_bar)
+            arguments
+                obj
+                u double
+                rotor_speed_init double
+                q_bar double = []
+            end
+            
+            if isempty(q_bar)
+                q_bar = obj.Battery.Averaged_SOC;
+            end
+
+            x0 = [1; rotor_speed_init];
+            [x_bar, u_bar, y_bar] = calcSteadyStateIO(obj.SimpleModel, u, q_bar, x0);
+                        
+            ptss = PowerTrainState();
+            ptss.q = q_bar;
+            ptss.x = x_bar;
+            ptss.u = u_bar;
+            ptss.y = y_bar;
+            ptss.BatteryOCV = obj.Battery.V_OCV_pack(q_bar);
+        end
+        
+        function [Apt, Bpt, Cpt, Dpt] = CalcMatrices(obj, ptstate)
+            x = vertcat(ptstate.u, repmat([ptstate.MotorCurrent; ptstate.RotorSpeed],4,1));
+            u = repmat(ptstate.u, obj.Model.Nu, 1);
+            d = zeros(obj.Model.Nd,1);
+            [Apt, Bpt, ~, Cpt, Dpt, ~] = CalcMatrices(obj.Model.LinearModel, x, u, d);
+            
+            % We only want Speed outputs
+            Cpt = Cpt(obj.SpeedOutputs_I,:);
+            Dpt = Dpt(obj.SpeedOutputs_I,:); 
         end
         
         function rs = RotorSpeed(obj, T_req)

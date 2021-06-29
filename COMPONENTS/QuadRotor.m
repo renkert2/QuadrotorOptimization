@@ -3,8 +3,6 @@ classdef QuadRotor < System
         rho double = 1.205 % Air Density - kg/m^3
         Height double = 0.1 % Approximate Height of the quadrotor in m, used to estimate drag
         DragCoefficient double = 1.2
-        
-        ConstrainInput logical = true % Prevents calcSteadyState from returning a solution with u < 0 or u > 1
     end
     
     properties (SetAccess = private)
@@ -22,9 +20,9 @@ classdef QuadRotor < System
     
     properties
         % Expensive calculations are cached
-        SS_QAve QRState % Steady State at average battery voltage 
-        flight_time double 
-        range double 
+        SS_QAve PowerTrainState % Steady State at average battery voltage 
+        FlightTime double 
+        Range double 
     end
     
     % Easier Access to Components
@@ -38,11 +36,6 @@ classdef QuadRotor < System
     properties (Dependent)
         PerformanceData
         DesignData
-    end
-    
-    properties (Hidden)
-        SteadyState_func function_handle % Used in solved for 0, i.e. solve(obj.SteadyState_func == 0)
-        SteadyStateIO_func function_handle % Solved for 0 in calcSteadyStateIO
     end
 
     methods
@@ -63,25 +56,50 @@ classdef QuadRotor < System
             obj = obj@System("QuadRotor", qrcomps);
             obj.Frame = p.Frame;
             obj.PT = pt;
-           
-            
-            %init_post(obj);
+
+            init_post(obj);
         end
 
         function init_post(obj)
-            setCombinedParams(obj, 'FilterDirectDescendentExProps', true);
+            DefineParams(obj);
+            setCombinedParams(obj, 'FilterDirectDescendentExProps', true); % Prevents components lower down the hierarchy from re-contributing to the system mass
             setParamQuantities(obj);
-            setSteadyStateFunc(obj);
-            setSteadyStateIOFunc(obj);
+            
+            obj.BM = BodyModel(obj.Params);
+            
             update(obj);
-            calcControllerGains(obj);
         end
 
         function update(obj)
             obj.Params.update();
             obj.SS_QAve = calcSteadyState(obj);
-            obj.flight_time = [];
-            obj.range = [];
+            obj.FlightTime = [];
+            obj.Range = [];
+        end
+        
+        function qrss = calcSteadyState(obj, T, q_bar)
+            arguments
+                obj
+                T double = []
+                q_bar double = []
+            end
+            
+            if isempty(T)
+                rotor_speed = obj.HoverSpeed();
+            else
+                rotor_speed = obj.PT.RotorSpeed(T);
+            end
+            
+            qrss = calcSteadyState(obj.PT, rotor_speed, q_bar);
+        end
+        
+        function qrss = calcSteadyStateIO(obj, u, q_bar)
+            arguments
+                obj
+                u double
+                q_bar double = []
+            end
+            qrss = calcSteadyStateIO(obj.PT, u, obj.HoverSpeed(), q_bar);
         end
         
         function setParamQuantities(obj)                       
@@ -113,122 +131,7 @@ classdef QuadRotor < System
             r = obj.PT.Propeller.D*1;
             obj.ReferenceAreaVector = matlabFunction([obj.PT.Propeller.D], [2*r*h; 2*r*h; pi*r^2]);
         end
-                
-        function setSteadyStateFunc(obj)
-            solve_vars = [sym('u1'); sym('x2')];
-            subs_vars = [sym('x1'); sym('x3')];
-            
-            args = {solve_vars, subs_vars};
-            
-            obj.SteadyState_func = matlabFunction(obj.Params, obj.SimpleModel.f_sym(2:end), args);
-        end
-        
-        function setSteadyStateIOFunc(obj)
-            solve_vars = [sym('x2'); sym('x3')];
-            subs_vars = [sym('u1'); sym('x1')];
-            
-            args = {solve_vars, subs_vars};
-            
-            obj.SteadyStateIO_func = matlabFunction(obj.Params, obj.SimpleModel.f_sym(2:end),args);
-        end
-        
-        function qrss = calcSteadyState(obj, q_bar, T_reqd, opts)
-            % Calculates steady-state values of the powertrain model at thrust T_reqd, returns QRSteadyState object
-            % Default value for q_bar is the average battery soc
-            % Default value fot T_reqd is the HoverThrust
-            
-            arguments
-                obj
-                q_bar double = [];
-                T_reqd double = [];
-                opts.SolverOpts struct = optimset('Display','off');
-            end
-            
-            if isempty(q_bar)
-                q_bar = obj.Battery.Averaged_SOC;
-            end
-            
-            if isempty(T_reqd)
-                rotor_speed = obj.HoverSpeed();
-            else
-                rotor_speed = obj.RotorSpeed(T_reqd);
-            end
-            
-            
-            x0 = [0.5; 1];
-            [x_sol, ~, exit_flag] = fsolve(@(x) obj.SteadyState_func(x,[q_bar;rotor_speed]), x0, opts.SolverOpts);
-            if exit_flag <= 0
-                error('No solution found');
-            end
-            if obj.ConstrainInput
-                if x_sol(1) > 1
-                    error('No valid solution.  Required input exceeds 1');
-                elseif x_sol(1) < 0
-                    error('No valid solution.  Required input must be positive');
-                end
-            end
-            
-            qrss = QRState();
-            qrss.q = q_bar;
-            qrss.x = [q_bar; x_sol(2:end); rotor_speed];
-            qrss.u = x_sol(1);
-            qrss.y = obj.SimpleModel.CalcG(qrss.x, qrss.u, []);
-            qrss.BatteryOCV = obj.V_OCV_pack(q_bar);
-        end
-        
-        function qrss = calcSteadyStateIO(obj, u, q, opts)
-            % Calculates steady-state thrust given input u, battery SOC q
-            % Default value for q is average battery soc
-            
-            arguments
-                obj
-                u
-                q double = []
-                opts.SolverOpts = optimset('Display','off');
-            end
-            
-            if isempty(q)
-                q = getComponents(obj,'Battery').Averaged_SOC;
-            end
-            
-            hover_speed = obj.HoverSpeed(); % Just used for initialization.
-            
-            x0 = [1; hover_speed];
-            [x_sol, ~, exit_flag] = fsolve(@(x) obj.SteadyStateIO_func(x,[u;q]), x0, opts.SolverOpts);
-            if exit_flag <= 0
-                error('No solution found');
-            end
-            
-            x_sol = [q; x_sol];
-            u_sol = u;
-            y_sol = obj.SimpleModel.CalcG(x_sol, u_sol, []);
-            
-            qrss = QRState();
-            qrss.q = q;
-            qrss.x = x_sol;
-            qrss.u = u_sol;
-            qrss.y = y_sol;
-            qrss.BatteryOCV = obj.V_OCV_pack(q);
-        end
-        
-        function u_bar_func = calcSteadyStateInputFunc(obj, opts)
-            arguments
-                obj
-                opts.Resolution double = 0.01
-            end
-            
-            solver_opts = optimset('Display','off');
-            
-            q_vals = 0:opts.Resolution:1;
-            u0_vals = zeros(size(q_vals));
-            for i = 1:numel(q_vals)
-                qrss = calcSteadyState(obj, q_vals(i), 'SolverOpts', solver_opts);
-                u0_vals(i) = qrss.u;
-            end
-            
-            u_bar_func = @(q) interp1(q_vals, u0_vals, q, 'pchip');
-        end
-        
+                        
         function tr = calcThrustRatio(obj)
             qrsio = calcSteadyStateIO(obj, 1);
             T_max = qrsio.TotalThrust;
@@ -252,17 +155,17 @@ classdef QuadRotor < System
 
         end
         
-        function [flight_time] = flightTime(obj)
+        function [flight_time] = calcFlightTime(obj)
             arguments
                 obj
             end
             
-            cap = obj.Battery.Capacity.Value; % A*s
-            ave_current = obj.SS_QAve.y(5);
+            cap = obj.PT.Battery.Capacity.Value; % A*s
+            ave_current = obj.SS_QAve.BusCurrent;
             flight_time = cap/ave_current;
         end
         
-        function [range, speed, flight_time, theta_0] = Range(obj, theta_0, opts)
+        function [range, speed, flight_time, theta_0] = calcRange(obj, theta_0, opts)
             % Calculates Range as a function of Pitch angle theta_0 < 0
             % if no pitch angle is specified, the optimal pitch is 
             % calculated with fminbnd
@@ -285,24 +188,24 @@ classdef QuadRotor < System
                     lb = theta_0_range(1);
                     ub = theta_0_range(2);
                     optimopts = optimoptions('fmincon', 'Display', 'none');
-                    con_in_cache = obj.ConstrainInput;
-                    obj.ConstrainInput = false;
+                    con_in_cache = obj.PT.SimpleModel.ConstrainInput;
+                    obj.PT.SimpleModel.ConstrainInput = false;
                     [theta_0] = fmincon(@objfun, x0, [],[],[],[],lb,ub,@nonlcon,optimopts);
-                    obj.ConstrainInput = con_in_cache;
+                    obj.PT.SimpleModel.ConstrainInput = con_in_cache;
                 else
                     assert(theta_0 >= theta_0_range(1) && theta_0 <= theta_0_range(2), "Pitch angle can range from -90deg to 0deg");
                 end
-                [range, speed, flight_time] = calcRange(obj, theta_0, "PitchAngle", opts.DisplayWarnings);
+                [range, speed, flight_time] = calcRange_(obj, theta_0, "PitchAngle", opts.DisplayWarnings);
             else
                 qrsmax = calcSteadyStateIO(obj, 1);
-                [range, speed, flight_time, theta_0] = calcRange(obj, qrsmax, "Thrust", opts.DisplayWarnings);
+                [range, speed, flight_time, theta_0] = calcRange_(obj, qrsmax, "Thrust", opts.DisplayWarnings);
             end
             
             if opts.SweepRange % Sweep Range
                 sweepRange();
             end
             
-            function [range, speed, flight_time, theta_0_, u] = calcRange(obj, arg1, mode, warn_flag)
+            function [range, speed, flight_time, theta_0_, u] = calcRange_(obj, arg1, mode, warn_flag)
                 T_hover = obj.HoverThrust(); % m*g
                 rho = obj.rho;
                 Cd = obj.DragCoefficient;
@@ -314,7 +217,7 @@ classdef QuadRotor < System
                         theta_0_ = arg1;
                         T_trim = T_hover*sec(theta_0_);
                     case "Thrust"
-                        qrstate_arg_flag = isa(arg1, 'QRState');
+                        qrstate_arg_flag = isa(arg1, 'PowerTrainState');
                         if qrstate_arg_flag
                             T_trim = arg1.TotalThrust;
                         else
@@ -331,10 +234,10 @@ classdef QuadRotor < System
                     if qrstate_arg_flag
                         qrs = arg1;
                     else
-                        qrs = obj.calcSteadyState([], T_trim);
+                        qrs = obj.calcSteadyState(T_trim);
                     end
                     u = qrs.u;
-                    cap = obj.Battery.Capacity.Value; % A*s
+                    cap = obj.PT.Battery.Capacity.Value; % A*s
                     ave_current = qrs.BusCurrent;
                     flight_time = cap/ave_current;
                     
@@ -359,7 +262,7 @@ classdef QuadRotor < System
                 
                 x = linspace(theta_0_range(1), theta_0_range(2), n);
                 for i = 1:n
-                    [range(i), speed(i), flight_time(i)] = calcRange(obj, x(i), "PitchAngle", false);
+                    [range(i), speed(i), flight_time(i)] = calcRange_(obj, x(i), "PitchAngle", false);
                 end
                 speed(isnan(range)) = NaN;
                 
@@ -414,7 +317,7 @@ classdef QuadRotor < System
                     return
                 end
                 
-                [r,~,~,~,u] = calcRange(obj, t, "PitchAngle", false);
+                [r,~,~,~,u] = calcRange_(obj, t, "PitchAngle", false);
                 t_prev = t;
                 r_prev = r;
                 u_prev = u;
@@ -424,8 +327,8 @@ classdef QuadRotor < System
         %% Export PerformanceData and Design Data
         function pd = get.PerformanceData(obj)
             pd = PerformanceData();
-            pd.FlightTime = obj.flight_time;
-            pd.Range = obj.range;
+            pd.FlightTime = obj.FlightTime;
+            pd.Range = obj.Range;
             pd.ThrustRatio = calcThrustRatio(obj);
             pd.SteadyState = obj.SS_QAve;
         end
@@ -442,18 +345,18 @@ classdef QuadRotor < System
             ss = obj.SS_QAve;
         end
         
-        function ft = get.flight_time(obj)
-            if isempty(obj.flight_time)
-                obj.flight_time = obj.flightTime();
+        function ft = get.FlightTime(obj)
+            if isempty(obj.FlightTime)
+                obj.FlightTime = obj.calcFlightTime();
             end
-            ft = obj.flight_time;
+            ft = obj.FlightTime;
         end
         
-        function r = get.range(obj)
-            if isempty(obj.range)
-                obj.range = obj.Range();
+        function r = get.Range(obj)
+            if isempty(obj.Range)
+                obj.Range = obj.calcRange();
             end
-            r = obj.range;
+            r = obj.Range;
         end
     end
 end

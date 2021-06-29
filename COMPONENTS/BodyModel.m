@@ -43,8 +43,8 @@ classdef BodyModel < Model
             obj.OutputDescriptions = obj.StateDescriptions;
             
             if nargin
-                obj.m = get(params, "Mass", "Quad Rotor"); % Must be set before calling genMatlabFunctions
-                obj.J = get(params, "J", "Quad Rotor");
+                obj.m = get(params, "Mass", "QuadRotor"); % Must be set before calling genMatlabFunctions
+                obj.J = get(params, "J", "QuadRotor");
                 
                 obj.J_r = get(params, "J_r", "MotorProp");
 

@@ -1,15 +1,9 @@
-classdef QRState
-    %Wraps the output from SimpleModel into something that's easier to work with
-    %   Detailed explanation goes here
+classdef PowerTrainState < ModelState
+    %Wraps the output from PowerTrain Simple Model into something that's easier to work with
+    %   Detailed explanation goes here    
     properties
         q double % Battery SOC
-        x double % Dynamic state values
-        u double % Input values
-        y double % Output values
-    end
-    
-    properties
-        BatteryOCV % Must Be set externally since it's dependent on sym param vals
+        BatteryOCV double % Must Be set externally since it's dependent on sym param vals
     end
     
     properties (Dependent)

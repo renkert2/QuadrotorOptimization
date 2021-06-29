@@ -26,8 +26,6 @@ classdef Propeller < Component
         k_Q compParam = compParam('k_Q', NaN, 'Unit', "N/(s*kg*m)", 'Description', "Drag Torque Coefficient", 'Dependent', true) % Drag Torque Coefficient - N/(s*kg*m)=1/s^4, speed in rev/s.
         K_Q compParam = compParam('K_Q', NaN, 'Unit', "N*m/(rad/s)^2", 'Description', "Lumped Drag Coefficient", 'Dependent', true)%square_drag_coeff %coefficient in front of speed^2 term, N*m/(rad/s)^2.
         K_T compParam = compParam('K_T', NaN, 'Unit', "N/(rad/s)^2", 'Description', "Lumped Thrust Coefficient", 'Dependent', true)%square_thrust_coeff %coefficient in front of speed^2 term, N/(rad/s)^2. 
-        
-        RotorSpeed function_handle % Calculates rotor speed as function of thrust
     end
     
     properties (SetAccess = private)
@@ -47,12 +45,12 @@ classdef Propeller < Component
             thrust = obj.K_T*(speed.^2);
         end
         
-        function speed = calcSpeed(obj, thrust)
-            speed = sqrt(thrust/obj.K_T);
-        end
-        
         function torque = calcTorque(obj, speed)
             torque = obj.K_Q*(speed.^2);
+        end
+        
+        function speed = RotorSpeed(obj, thrust)
+            speed = sqrt(thrust/obj.K_T.Value); % Bandaid!  Need ParamFunctions class or something
         end
         
         function init(obj)
@@ -67,13 +65,6 @@ classdef Propeller < Component
             obj.k_Q.setDependency(@Propeller.calcTorqueCoefficient, [obj.k_P]);
             obj.K_Q.setDependency(@Propeller.calcLumpedTorqueCoefficient, [obj.k_Q, obj.rho, obj.D]);
             obj.K_T.setDependency(@Propeller.calcLumpedThrustCoefficient, [obj.k_T, obj.rho, obj.D]);
-            
-            % Rotor Speed Function
-            % - Calculates required rotor speed as a function of total
-            % thrust
-            T_reqd = sym("T_reqd");
-            rotor_speed = obj.calcSpeed(T_reqd);
-            obj.RotorSpeed = matlabFunction([obj.K_T], rotor_speed, {T_reqd});
         end
     end
     
@@ -127,7 +118,7 @@ classdef Propeller < Component
             % Vertices
             V(1) = GraphVertex_Internal('Description', "Inertia (omega)",...
                 'Capacitance', C(1),...
-                'Coefficient', 1*obj.J,...
+                'Coefficient', pop(obj.J),...
                 'VertexType', 'AngularVelocity');
             
             V(2) = GraphVertex_External('Description', "Input Torque (T_m)",'VertexType','Torque');
