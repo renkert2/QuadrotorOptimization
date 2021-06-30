@@ -7,8 +7,6 @@ classdef PowerTrain < System
     
     properties
         SimpleModel PowerTrain_SimpleModel
-        
-        Model_x0 double = [1 0 0 0 0 0 0 0 0]'
     end
     
     properties (SetAccess = private)
@@ -66,6 +64,7 @@ classdef PowerTrain < System
         function init_post(obj)
             createModel(obj);
             obj.Model.Name = "QuadrotorPowerTrainModel";
+            obj.Model.x0 = [1 0 0 0 0 0 0 0 0].';
             
             obj.SimpleModel = PowerTrain_SimpleModel(obj.Model); % Name set inside this subclass
         end
@@ -130,6 +129,22 @@ classdef PowerTrain < System
             % We only want Speed outputs
             Cpt = Cpt(obj.SpeedOutputs_I,:);
             Dpt = Dpt(obj.SpeedOutputs_I,:); 
+        end
+        
+        function PT_simple_ss = getFirstOrderSS(obj, ptstate)
+            [Apt,Bpt,Cpt,Dpt] = CalcMatrices(obj, ptstate);
+            
+            % Omit Battery Dynamics
+            Aptmod = Apt(2:end,2:end);
+            Bptmod = Bpt(2:end,:);
+            Cptmod = Cpt(:,2:end);
+            Dptmod = Dpt(:,:);
+            
+            gain = Dptmod-Cptmod*(Aptmod\Bptmod);
+            dom_pole = min(abs(eigs(Apt)));
+            den = [(1/dom_pole), 1];
+            PT_simple_tf = tf(num2cell(gain), den);
+            PT_simple_ss = ss(PT_simple_tf);
         end
         
         function rs = RotorSpeed(obj, T_req)

@@ -22,6 +22,7 @@ classdef PowerTrain_SimpleModel < Model
             
             states = [1,2,3];
             obj.StateDescriptions = ["Battery SOC"; "Motor Current"; "Rotor Speed"];
+            obj.x0 = [1 0 0]';
             obj.Nx = numel(states);
             
             % INPUTS

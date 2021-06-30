@@ -58,11 +58,7 @@ classdef QuadRotorSystem < handle
             end
             
             %% PowerTrain Model
-            [Apt,Bpt,Cpt,Dpt] = CalcMatrices(obj.QR.PT, obj.QR.SS_QAve);
-            gain = Dpt-Cpt*(Apt\Bpt);
-            dom_pole = min(abs(eigs(Apt)));
-            den = [(1/dom_pole), 1];
-            PT = tf(num2cell(diag(gain)), den);
+            PT = obj.QR.PT.getFirstOrderSS(obj.QR.SS_QAve);
             PT.InputName = {'u'};
             PT.OutputName = {'W'};
             
@@ -75,14 +71,14 @@ classdef QuadRotorSystem < handle
             BM.InputName = {'W'};
             BM.OutputName = {'y'};
             
-            SYS = series(PT,BM,1:4,1:4);
+            SYS = connect(PT,BM, 'u', 'y');
             
-            Q = eye(obj.BM.Nx);
-            R = rho*eye(obj.BM.Nu);
+            Q = eye(size(SYS.A,1));
+            R = rho*eye(size(SYS.B,2));
             
             N = [0];
             
-            obj.K_lqr = lqr(A,B,Q,R,N);
+            obj.K_lqr = lqr(SYS,Q,R,N);
         end
     end
 end
