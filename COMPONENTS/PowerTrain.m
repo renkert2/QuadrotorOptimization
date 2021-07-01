@@ -142,9 +142,12 @@ classdef PowerTrain < System
             
             gain = Dptmod-Cptmod*(Aptmod\Bptmod);
             dom_pole = min(abs(eigs(Apt)));
-            den = [(1/dom_pole), 1];
-            PT_simple_tf = tf(num2cell(gain), den);
-            PT_simple_ss = ss(PT_simple_tf);
+            
+            Asimple = -dom_pole.*eye(4);
+            Bsimple = -Asimple*gain;
+            Csimple = eye(4);
+            Dsimple = zeros(4);
+            PT_simple_ss = ss(Asimple, Bsimple, Csimple, Dsimple);
         end
         
         function rs = RotorSpeed(obj, T_req)

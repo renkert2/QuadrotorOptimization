@@ -15,6 +15,11 @@ classdef QuadRotorSystem < handle
     
     properties
         K_lqr double
+        SysSteadyState double
+        
+        LinearPlantModel
+        LinearPowertrainModel
+        LinearBodyModel
     end
 
     methods
@@ -33,6 +38,8 @@ classdef QuadRotorSystem < handle
             obj.RefTraj.Lemniscate('a',10, 'PotatoChipHeight', 2);
             obj.RefTraj.init();
             obj.RefTraj.setTimeSeries(1);
+            
+            obj.setLQR();
         end
         
         
@@ -54,31 +61,37 @@ classdef QuadRotorSystem < handle
         function setLQR(obj, rho)
             arguments
                 obj
-                rho (1,1) double = 0.01
+                rho (1,1) double = 1
             end
             
             %% PowerTrain Model
             PT = obj.QR.PT.getFirstOrderSS(obj.QR.SS_QAve);
             PT.InputName = {'u'};
             PT.OutputName = {'W'};
+            obj.LinearPowertrainModel = PT;
             
             
             %% Body Model
             x_ss = zeros(12,1);
             u_ss = obj.QR.BM.calcSteadyStateInput(x_ss, [], repmat(obj.QR.HoverSpeed(),4,1));
             [Ab,Bb,~,Cb,Db,~] = CalcMatrices(obj.QR.BM.LinearModel,x_ss,u_ss,[]);
+            obj.SysSteadyState = [u_ss;x_ss];
+            
             BM = ss(Ab,Bb,Cb,Db);
             BM.InputName = {'W'};
             BM.OutputName = {'y'};
+            obj.LinearBodyModel = BM;
             
-            SYS = connect(PT,BM, 'u', 'y');
+            plant = connect(PT,BM, 'u', {'W','y'});
+            obj.LinearPlantModel = plant;
             
-            Q = eye(size(SYS.A,1));
-            R = rho*eye(size(SYS.B,2));
+            Q = eye(size(plant.A,1));
+            Q(1:4,1:4) = 0; % We don't care about the speed state
+            R = rho*eye(size(plant.B,2));
             
             N = [0];
             
-            obj.K_lqr = lqr(SYS,Q,R,N);
+            obj.K_lqr = lqr(plant,Q,R,N);
         end
     end
 end

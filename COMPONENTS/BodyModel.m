@@ -27,6 +27,8 @@ classdef BodyModel < Model
             obj.Nd = 0;
             obj.Ny = 12; % Full State Feedback
             
+            obj.x0 = zeros(obj.Nx,1);
+            
             obj.I = struct();
             obj.I.x.p = 1:3;
             obj.I.x.v = 4:6;
