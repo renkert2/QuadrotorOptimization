@@ -4,6 +4,11 @@ classdef QuadRotorSystem < handle
     
     properties (Constant)
         Name char = 'QuadRotor_Simulink'
+        PlantSubsystem char = 'QuadRotor_Simulink/PlantSubsystem'
+        CombinedLinearPlantModel char = 'QuadRotor_Simulink/PlantSubsystem/CombinedLinearPlantModel'
+        IndividualPlantModel char = 'QuadRotor_Simulink/PlantSubsystem/IndividualPlantModel'
+        PowertrainSubsystem char = 'QuadRotor_Simulink/PlantSubsystem/IndividualPlantModel/PowertrainSubsystem'
+        BodySubsystem char = 'QuadRotor_Simulink/PlantSubsystem/IndividualPlantModel/BodySubsystem'
     end
     
     properties
@@ -92,6 +97,18 @@ classdef QuadRotorSystem < handle
             N = [0];
             
             obj.K_lqr = lqr(plant,Q,R,N);
+        end
+        
+        function setVariant(obj, mde)
+            switch mde
+                case "Linear"
+                    set_param(obj.PlantSubsystem,'LabelModeActiveChoice', 'Combined')
+                case "Nonlinear"
+                    set_param(obj.PlantSubsystem,'LabelModeActiveChoice', 'Individual')
+                    set_param(obj.PowertrainSubsystem, 'LabelModeActiveChoice', 'Nonlinear')
+                    set_param(obj.PowertrainSubsystem, 'LabelModeActiveChoice', 'Nonlinear')
+            end
+            
         end
     end
 end
