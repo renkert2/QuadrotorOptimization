@@ -15,3 +15,5 @@ close all
 figure
 
 motor_model.Simulate([], disturbances, [], [0 10]);
+
+%% Test Motor with Algebraic Current State

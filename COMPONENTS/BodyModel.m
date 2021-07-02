@@ -112,21 +112,16 @@ classdef BodyModel < Model
             obj.g_sym = x;
         end
         
-        function [ax] = plot(obj, x, opts)
+        function [ax] = plot(obj, x_arg, opts)
             arguments
                 obj
-                x double
+                x_arg
                 opts.Interval double = 10
                 opts.ParentAxes matlab.graphics.axis.Axes = matlab.graphics.axis.Axes.empty()
                 opts.RefTraj ReferenceTrajectory3D = ReferenceTrajectory3D.empty()
                 opts.Annotate logical = true
+                opts.TrajectoryNames string = string.empty()
             end
-                
-            trans = x(:,obj.I.x.p);
-            rots = eul2quat([1 -1 -1].*fliplr(x(:,obj.I.x.Theta)),'ZYX');
-            
-            trans_paint = trans(1:opts.Interval:end, :);
-            rots_paint = rots(1:opts.Interval:end, :);
             
             if ~isempty(opts.ParentAxes)
                 ax = opts.ParentAxes;
@@ -143,19 +138,44 @@ classdef BodyModel < Model
                 ln_ref_flag = false;
             end
             
-            hold on
-            ln = plot3(ax, trans(:,1), -trans(:,2), -trans(:,3), '-k');
-            hold off
+            if isa(x_arg,'double')
+                x = x_arg;
+                trans = x(:,obj.I.x.p);
+                rots = eul2quat([1 -1 -1].*fliplr(x(:,obj.I.x.Theta)),'ZYX');
+                
+                hold on
+                traj_children = plot3(ax, trans(:,1), -trans(:,2), -trans(:,3), '-k');
+                hold off
+                
+                traj_children.DisplayName = 'Trajectory';
+                traj_names = "Trajectory";
+            elseif isa(x_arg,'cell')
+                x_primary = x_arg{1};
+                rots = eul2quat([1 -1 -1].*fliplr(x_primary(:,obj.I.x.Theta)),'ZYX');
+                trans_all = cellfun(@(x) x(:,obj.I.x.p), x_arg, 'UniformOutput', false);
+                
+                hold on
+                N = numel(trans_all);
+                traj_children = matlab.graphics.GraphicsPlaceholder.empty(0,N);
+                traj_names = strings(1,N);
+                for i = 1:numel(trans_all)
+                    trans = trans_all{i};
+                    traj_children(1,i) = plot3(ax, trans(:,1), -trans(:,2), -trans(:,3));
+                    traj_names(1,i) = sprintf("Trajectory %d", i);
+                end
+                trans = trans_all{1};
+            else
+                error("x_arg must be a double of size [N_t,N_x] or a cell array of double arrays");
+            end
+            
+            trans_paint = trans(1:opts.Interval:end, :);
+            rots_paint = rots(1:opts.Interval:end, :);
             
             
             daspect([1 1 1])
             grid on
             view(ax, 3)
             axis padded
-%            rangeFun = @(i) [min(trans(:,i))-1, max(trans(:,i))+1];
-%             xlim(ax, rangeFun(1));
-%             ylim(ax, fliplr(-rangeFun(2)));
-%             zlim(ax, fliplr(-rangeFun(3)));
             if opts.Annotate
                 title("QuadRotor Trajectory Plot")
                 xlabel("$$x$$", 'Interpreter', 'latex')
@@ -177,11 +197,13 @@ classdef BodyModel < Model
             painter.HandleXAxis.DisplayName = 'Body X axis';
             painter.HandleYAxis.DisplayName = 'Body Y axis';
             painter.HandleZAxis.DisplayName = 'Body Z axis';
-            ln.DisplayName = 'Trajectory';
             
             if opts.Annotate
-                lgnd_children = [ln, painter.HandleXAxis, painter.HandleYAxis, painter.HandleZAxis];
-                lgnd_labels = ["Trajectory", "Body X axis", "Body Y axis", "Body Z axis"];
+                lgnd_children = [traj_children, painter.HandleXAxis, painter.HandleYAxis, painter.HandleZAxis];
+                if ~isempty(opts.TrajectoryNames)
+                    traj_names = opts.TrajectoryNames;
+                end
+                lgnd_labels = [traj_names, "Body X axis", "Body Y axis", "Body Z axis"];
                 if ln_ref_flag
                     lgnd_children = [ln_ref, lgnd_children];
                     lgnd_labels = ["Reference Trajectory", lgnd_labels];
