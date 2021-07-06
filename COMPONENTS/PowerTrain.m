@@ -16,6 +16,8 @@ classdef PowerTrain < System
         Motor PMSMMotor
         Propeller Propeller
         MotorProp MotorProp
+        
+        Mass extrinsicProp
     end
     
     methods
@@ -62,6 +64,10 @@ classdef PowerTrain < System
         end
         
         function init_post(obj)
+            exps = obj.Params.extrinsicProps;
+            masses = getProp(exps, 'Mass');
+            obj.Mass = masses(end);
+            
             createModel(obj);
             obj.Model.Name = "QuadrotorPowerTrainModel";
             obj.Model.x0 = [1 0 0 0 0 0 0 0 0].';

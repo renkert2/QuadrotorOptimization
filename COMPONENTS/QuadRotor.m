@@ -131,28 +131,22 @@ classdef QuadRotor < System
             r = obj.PT.Propeller.D*1;
             obj.ReferenceAreaVector = matlabFunction([obj.PT.Propeller.D], [2*r*h; 2*r*h; pi*r^2]);
         end
-                        
+        
+        function setVehicleMass(obj, total_mass)
+            % adjusts mass of frame so that the combined component mass
+            % matches total mass
+            
+            mass_delta = total_mass - obj.Mass.Value;
+            obj.Frame.Mass.Value = obj.Frame.Mass.Value + mass_delta;
+            obj.Mass.update();
+        end
+        
         function tr = calcThrustRatio(obj)
             qrsio = calcSteadyStateIO(obj, 1);
             T_max = qrsio.TotalThrust;
             T_hover = obj.HoverThrust();
             
             tr = T_max / T_hover;
-        end
-        
-        function [t_out, y_out, q_out, errFlag, state_out] = Simulate(obj, opts)
-            arguments
-                obj
-                opts.MaxClimbRateReference double = 20
-                opts.MaxSimTime double = 5e4
-                opts.Timeout double = inf
-                opts.PlotResults logical = true
-                opts.FeedForwardW logical = true
-                opts.FeedForwardU logical = true
-                opts.SolverOpts cell = {}
-            end
-
-
         end
         
         function [flight_time] = calcFlightTime(obj)

@@ -36,6 +36,7 @@ classdef QuadRotorSystem < handle
         end
         
         function init(obj)
+            load_system(obj.Name);
             obj.Wks = get_param(obj.Name, 'ModelWorkspace');
             assignin(obj.Wks, "QR_Object", obj);
             makeSimulinkModel(obj.QR.BM, obj.Name);
@@ -196,6 +197,12 @@ classdef QuadRotorSystem < handle
                     set_param(obj.PowertrainSubsystem, 'LabelModeActiveChoice', 'Nonlinear')
             end
             
+        end
+        
+        function loadTestConditions(obj, flight_data)
+            setVehicleMass(obj.QR, flight_data.VehicleMass);
+            obj.QR.PT.Model.x0(1) = flight_data.StartingSOC;
+            set_param(obj.Name, 'StopTime', num2str(seconds(flight_data.FlightTime)));
         end
     end
 end
