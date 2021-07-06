@@ -242,11 +242,18 @@ classdef FlightLog < handle
         
         BatteryLookup BattLookup
     end
+    
+    properties (SetAccess = private)
+        FlightTime duration
+        ActiveTimes datetime
+    end
+    
     properties (Dependent)
         BootTime datetime
         StartingSOC double
         EndingSOC double
     end
+    
     methods
         function obj = FlightLog(file)
             s = load('LiPo_42V_Lookup.mat', 'LiPo_42V_Lookup');
@@ -262,6 +269,8 @@ classdef FlightLog < handle
             obj.Data = processTimeUS(obj);
             setCorrectedBusVoltage(obj);
             setSOCCurve(obj);
+            setActiveTimes(obj);
+            setFlightTime(obj);
         end
                 
         function plot(obj, xfield, yfields)
@@ -286,19 +295,54 @@ classdef FlightLog < handle
             xlabel(sprintf("%s:%s",xfield(1,1),xfield(1,2)));
         end
         
-        function ft = FlightTime(obj, opts)
+        function plotTime(obj, yfields, opts)
+            arguments
+                obj
+                yfields (:,2) string
+                opts.ActiveTime logical = false
+            end
+             
+            N_y = size(yfields,1);
+            t = tiledlayout(N_y,1);
+            title(t,"Log Data");
+            
+            for i = 1:N_y
+                nexttile
+                x = obj.Data.(yfields(i,1)).Time;
+                y = obj.Data.(yfields(i,1)).(yfields(i,2));
+                if opts.ActiveTime
+                    [x, I_act] = obj.time2ActiveTime(x);
+                    x = x(I_act);
+                    y = y(I_act);
+                end
+                plot(x,y);
+                ylabel(sprintf("%s:%s", yfields(i,1),yfields(i,2)));
+            end
+            xlabel("Time");
+            
+        end
+        
+        function [active_times, flight_I] = setActiveTimes(obj, opts)
             arguments
                 obj
                 opts.ThOutThreshold double = 0.01
             end
-            
             ThO = obj.Data.CTUN.ThO;
             flight_I = ThO > opts.ThOutThreshold;
-            time_us = obj.Data.CTUN.TimeUS;
             
-            ft_us = trapz(time_us, flight_I);
-            ft_s = ft_us*1e-6;
-            ft = seconds(ft_s);
+            I_diff = diff([0; flight_I]);
+            starts = I_diff == 1;
+            ends = I_diff == -1;
+            
+            times = obj.Data.CTUN.Time;
+            active_times = [times(starts) times(ends)];
+            obj.ActiveTimes = active_times;
+        end
+        
+        function [ft] = setFlightTime(obj)
+            time_deltas = obj.ActiveTimes(:,2) - obj.ActiveTimes(:,1);
+            ft = sum(time_deltas);
+            obj.FlightTime = ft;
         end
         
         function t = get.BootTime(obj)
@@ -307,6 +351,33 @@ classdef FlightLog < handle
             epoch_date = datetime(1980,01,06, 'TimeZone', 'UTC') + calweeks(BOOT_Wks);
             t = epoch_date + seconds(BOOT_Ms/1000);
             t.TimeZone = "America/Chicago";
+        end
+        
+        function [tact, I_act] = time2ActiveTime(obj, t)
+            N_int = size(obj.ActiveTimes,1);
+            tact = seconds(zeros(size(t)));
+            I_act = false(size(t));
+            for i = 1:N_int
+                int = obj.ActiveTimes(i,:);
+                
+                if i == 1
+                    prev_end = seconds(0);
+                end
+                
+                act_I = (int(1) <= t) & (t <= int(2));
+                
+                if i == N_int
+                    inact_next = (t > int(2));
+                else
+                    next_start = obj.ActiveTimes(i+1,1);
+                    inact_next = (t > int(2)) & (t < next_start);
+                end
+                
+                I_act(act_I) = true;
+                tact(act_I) = (t(act_I) - int(1)) + prev_end;
+                prev_end = tact(find(act_I,1,'last'));
+                tact(inact_next) = prev_end;
+            end
         end
         
         function t = convTimeUS(obj, time_us)
