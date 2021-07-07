@@ -24,7 +24,7 @@ classdef BodyModel < Model
             obj.Name = "QuadrotorBodyModel";
             obj.Nx = 12;
             obj.Nu = 4;
-            obj.Nd = 0;
+            obj.Nd = 3;
             obj.Ny = 12; % Full State Feedback
             
             obj.x0 = zeros(obj.Nx,1);
@@ -41,7 +41,7 @@ classdef BodyModel < Model
             obj.StateDescriptions = ["X Position", "Y Position", "Z Position", "X Velocity", "Y Velocity", "Z Velocity", "Roll", "Pitch", "Yaw", "X Angular Velocity", "Y Angular Velocity", "Z Angular Velocity"];
             obj.InputSyms = ["omega_tilde_1", "omega_tilde_2", "omega_tilde_3", "omega_tilde_4"];
             obj.InputDescriptions = ["Rotor Speed 1", "Rotor Speed 2", "Rotor Speed 3", "Rotor Speed 4"];
-            obj.DisturbanceDescriptions = [];
+            obj.DisturbanceDescriptions = ["X Force", "Y Force", "Z Force"];
             obj.OutputDescriptions = obj.StateDescriptions;
             
             if nargin
@@ -73,6 +73,7 @@ classdef BodyModel < Model
         
         function setModelSymFunctions(obj)
             x = obj.SymVars.x;
+            d = obj.SymVars.d;
             p = x(obj.I.x.p);
             v = x(obj.I.x.v);
             
@@ -105,7 +106,7 @@ classdef BodyModel < Model
             G_a = J_r*([-1 1 -1 1]*omega_tilde)*(cross(e_3, omega));
 
             obj.f_sym = [v;...
-                g*e_3 + (1/m)*Rbe*(-f*e_3);...
+                g*e_3 + (1/m)*Rbe*(-f*e_3) + d./m;...
                 W*omega;...
                 inv(J)*(-cross(omega, J*omega) + tau + G_a)];   
             

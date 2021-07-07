@@ -17,13 +17,15 @@ classdef QuadRotorSystem < handle
         
         RefTraj ReferenceTrajectory3D
         
-        SimOut Simulink.SimulationOutput % Cache for simulation output
-        SimOutLinear Simulink.SimulationOutput
+        SimOut QRSimOut % Cache for simulation output
+        SimOutLinear QRSimOut
+        SimOutDesc struct
     end
     
     properties
         K_lqr double
         SysSteadyState double
+        EnableStop logical = true
         
         LinearPlantModel
         LinearPowertrainModel
@@ -41,6 +43,7 @@ classdef QuadRotorSystem < handle
             assignin(obj.Wks, "QR_Object", obj);
             makeSimulinkModel(obj.QR.BM, obj.Name);
             makeSimulinkModel(obj.QR.PT.Model, obj.Name);
+            obj.setSimOutDesc();
             
             obj.RefTraj = ReferenceTrajectory3D();
             obj.RefTraj.Speed = 1;
@@ -51,8 +54,7 @@ classdef QuadRotorSystem < handle
             obj.setLQR();
         end
         
-        
-        function [t,y,r] = Simulate(obj, opts)
+        function qrso = Simulate(obj, opts)
             arguments
                 obj
                 opts.Mode string = "Nonlinear"
@@ -61,17 +63,13 @@ classdef QuadRotorSystem < handle
             setVariant(obj, opts.Mode);
             
             simOut = sim(obj.Name);
-            if nargout
-                t = simOut.tout;
-                y = get(simOut.yout, 'y_out').Values.Data;
-                r = get(simOut.yout, 'r_out').Values.Data;
-            end
+            qrso = QRSimOut(simOut, obj.SimOutDesc);
             
             switch opts.Mode
                 case "Nonlinear"
-                    obj.SimOut = simOut;
+                    obj.SimOut = qrso;
                 case "Linear"
-                    obj.SimOutLinear = simOut;
+                    obj.SimOutLinear = qrso;
             end
         end
         
@@ -119,8 +117,9 @@ classdef QuadRotorSystem < handle
             
             %% Body Model
             x_ss = zeros(12,1);
-            u_ss = obj.QR.BM.calcSteadyStateInput(x_ss, [], repmat(obj.QR.HoverSpeed(),4,1));
-            [Ab,Bb,~,Cb,Db,~] = CalcMatrices(obj.QR.BM.LinearModel,x_ss,u_ss,[]);
+            u_ss = obj.QR.BM.calcSteadyStateInput(x_ss, zeros(3,1), repmat(obj.QR.HoverSpeed(),4,1));
+            d_ss = zeros(3,1);
+            [Ab,Bb,~,Cb,Db,~] = CalcMatrices(obj.QR.BM.LinearModel,x_ss,u_ss,d_ss);
             obj.SysSteadyState = [u_ss;x_ss];
             
             BM = ss(Ab,Bb,Cb,Db);
@@ -202,7 +201,20 @@ classdef QuadRotorSystem < handle
         function loadTestConditions(obj, flight_data)
             setVehicleMass(obj.QR, flight_data.VehicleMass);
             obj.QR.PT.Model.x0(1) = flight_data.StartingSOC;
+            obj.EnableStop = false;
             set_param(obj.Name, 'StopTime', num2str(seconds(flight_data.FlightTime)));
+        end
+    end
+    
+    methods (Hidden)% Helper Functions
+        function s = setSimOutDesc(obj)
+            s = struct();
+            s.y_out = obj.QR.BM.OutputDescriptions;
+            s.r_out = ["X Ref"; "Y Ref"; "Z Ref"];
+            s.PT_out = obj.QR.PT.Model.OutputDescriptions;
+            s.u_out = obj.QR.PT.Model.InputDescriptions;
+            s.omega_out = obj.QR.PT.Model.OutputDescriptions(obj.QR.PT.SpeedOutputs_I);
+            obj.SimOutDesc = s;
         end
     end
 end

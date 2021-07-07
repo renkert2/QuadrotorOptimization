@@ -269,6 +269,7 @@ classdef FlightLog < handle
             obj.Data = processTimeUS(obj);
             setCorrectedBusVoltage(obj);
             setSOCCurve(obj);
+            setThCorr(obj);
             setActiveTimes(obj);
             setFlightTime(obj);
         end
@@ -295,31 +296,31 @@ classdef FlightLog < handle
             xlabel(sprintf("%s:%s",xfield(1,1),xfield(1,2)));
         end
         
-        function plotTime(obj, yfields, opts)
+        function p = plotTime(obj, ycat, yfields, opts)
             arguments
                 obj
-                yfields (:,2) string
+                ycat (1,1) string
+                yfields (:,1) string
                 opts.ActiveTime logical = false
             end
              
-            N_y = size(yfields,1);
-            t = tiledlayout(N_y,1);
-            title(t,"Log Data");
+            N_y = numel(yfields);
             
+            p = matlab.graphics.GraphicsPlaceholder.empty(N_y,0);
             for i = 1:N_y
-                nexttile
-                x = obj.Data.(yfields(i,1)).Time;
-                y = obj.Data.(yfields(i,1)).(yfields(i,2));
+                x = obj.Data.(ycat).Time;
+                y = obj.Data.(ycat).(yfields(i));
                 if opts.ActiveTime
                     [x, I_act] = obj.time2ActiveTime(x);
                     x = x(I_act);
                     y = y(I_act);
                 end
-                plot(x,y);
-                ylabel(sprintf("%s:%s", yfields(i,1),yfields(i,2)));
+                s = sprintf("%s:%s", ycat,yfields(i));
+                p(i) = plot(x,y, 'DisplayName', s);
+                hold on 
             end
-            xlabel("Time");
-            
+            hold off
+            legend('-DynamicLegend');
         end
         
         function [active_times, flight_I] = setActiveTimes(obj, opts)
@@ -405,6 +406,12 @@ classdef FlightLog < handle
              obj.Data.BAT.SOC = q;
         end
         
+        function setThCorr(obj)
+           c = getParamValue(obj, "MOT_SPIN_MIN");
+           obj.Data.CTUN.ThOCorr = obj.Data.CTUN.ThO + c;
+           obj.Data.CTUN.ThHCorr = obj.Data.CTUN.ThH + c;
+        end
+        
         function q = get.StartingSOC(obj)
             q_vec = obj.Data.BAT.SOC;
             q = mean(q_vec(1:10));
@@ -413,6 +420,15 @@ classdef FlightLog < handle
         function q = get.EndingSOC(obj)
             q_vec = obj.Data.BAT.SOC;
             q = mean(q_vec(end-10:end));
+        end
+        
+        function [v,p] = getParamValue(obj, param)
+            params_cell = obj.Data.PARM;
+            params = string(params_cell(:,1));
+            vals = cell2mat(params_cell(:,2));
+            I = contains(params, param);
+            v = vals(I);
+            p = params(I);
         end
             
         function save(obj)
