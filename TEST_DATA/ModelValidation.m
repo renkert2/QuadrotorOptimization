@@ -13,7 +13,7 @@ classdef ModelValidation < handle
     
     methods
         function Simulate(obj)
-            loadTestConditions(obj.M, obj.FL);
+            setTestConditions(obj);
             obj.MO = obj.M.Simulate('Mode','Nonlinear');
         end
         
@@ -22,6 +22,23 @@ classdef ModelValidation < handle
             if ~isempty(val.SimOut)
                 obj.MO = val.SimOut;
             end
+        end
+        
+        function setTestConditions(obj)
+            flight_data = obj.FL;
+            
+            setVehicleMass(obj.M.QR, flight_data.VehicleMass);
+            obj.M.QR.PT.Model.x0(1) = flight_data.StartingSOC;
+            obj.M.EnableStop = false;
+            set_param(obj.M.Name, 'StopTime', num2str(seconds(flight_data.FlightTime)));
+            
+            refts = getRefTrajTS(flight_data);
+            obj.M.RefTrajTS = refts;
+            obj.M.RefTrajVar = "TimeSeries";
+            
+            distts = getDisturbanceForceTS(flight_data);
+            obj.M.DisturbanceTS = distts;
+            obj.M.DistVar = "TimeSeries";
         end
         
         function plotPairs(obj, arg)
@@ -47,19 +64,6 @@ classdef ModelValidation < handle
                 compPlot(obj, s.MArgs, s.FLArgs);
                 title(s.Name);
                 ylabel(s.YLabel, 'Interpreter', 'Latex');
-                if s.Name == "Throttle"
-                    % Hacky fix of throttle plot
-                    ax = gca;
-                    c = ax.Children;
-                    d = vertcat(c(3:end).YData);
-                    d = mean(d,1);
-                    c(3).YData = d;
-                    c(3).DisplayName = "Simulated: Inverter Input";
-                    delete(c(4:end))
-                    c(1).Color = 'r';
-                    c(3).Color = 'b';
-                    ax.Children = c([3 1 2]); 
-                end
             end
         end
         
@@ -86,7 +90,7 @@ classdef ModelValidation < handle
             c = {"Bus Voltage", "V", {"PT_out", "Internal Voltage"}, {"BAT", "VoltCorr"};...
                 "Bus Current", "I", {"PT_out", "Internal Current"}, {"BAT", "Curr"};...
                 "Battery SOC", "q", {"PT_out", "Battery SOC"}, {"BAT", "SOC"};...
-                "Throttle", "u", {"u_out"}, {"CTUN", ["ThOCorr", "ThHCorr"]};...
+                "Throttle", "u", {"u_out"}, {"RCOU", ["ESCUMean"]};...
                 "Height", "m", {"y_out", "Z Position"}, {"POS", "RelHomeAlt"};...
                 };
             s = struct('Name', c(:,1), 'YLabel', c(:,2), 'MArgs', c(:,3), 'FLArgs', c(:,4));

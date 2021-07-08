@@ -16,6 +16,8 @@ classdef QuadRotorSystem < handle
         Wks Simulink.ModelWorkspace
         
         RefTraj ReferenceTrajectory3D
+        RefTrajTS timeseries
+        DisturbanceTS timeseries
         
         SimOut QRSimOut % Cache for simulation output
         SimOutLinear QRSimOut
@@ -26,6 +28,10 @@ classdef QuadRotorSystem < handle
         K_lqr double
         SysSteadyState double
         EnableStop logical = true
+        
+        Variant string
+        DistVar string
+        RefTrajVar string
         
         LinearPlantModel
         LinearPowertrainModel
@@ -50,6 +56,7 @@ classdef QuadRotorSystem < handle
             obj.RefTraj.Lemniscate('a',10, 'PotatoChipHeight', 2);
             obj.RefTraj.init();
             obj.RefTraj.setTimeSeries(1);
+            obj.RefTrajTS = obj.RefTraj.TimeSeries;
             
             obj.setLQR();
         end
@@ -60,7 +67,7 @@ classdef QuadRotorSystem < handle
                 opts.Mode string = "Nonlinear"
             end
             
-            setVariant(obj, opts.Mode);
+            obj.Variant = opts.Mode;
             
             simOut = sim(obj.Name);
             qrso = QRSimOut(simOut, obj.SimOutDesc);
@@ -76,20 +83,22 @@ classdef QuadRotorSystem < handle
         function ax = plot(obj, so, pltopts)
             arguments
                 obj
-                so Simulink.SimulationOutput = obj.SimOut
+                so = obj.SimOut
                 pltopts cell = {}
             end
-            y = get(so.yout, 'y_out').Values.Data;
+            y = get(so.Data.yout, 'y_out').Values.Data;
+            r = get(so.Data.yout, 'r_out').Values.Data;
+            
             if ~isempty(obj.SimOutLinear)
                 sol = obj.SimOutLinear;
-                yl = get(sol.yout, 'y_out').Values.Data;
+                yl = get(sol.Data.yout, 'y_out').Values.Data;
                 arg = {y,yl};
                 lgnd_names = ["Nonlinear Model Trajectory", "Linear Model Trajectory"];
             else
                 arg = y;
                 lgnd_names = ["Trajectory"];
             end
-            ax = obj.QR.BM.plot(arg, 'RefTraj', obj.RefTraj, 'TrajectoryNames', lgnd_names, pltopts{:});
+            ax = obj.QR.BM.plot(arg, 'RefTraj', r, 'TrajectoryNames', lgnd_names, pltopts{:});
         end
         
         function ax = animate(obj, so)
@@ -186,7 +195,7 @@ classdef QuadRotorSystem < handle
             cum_err = trapz(t,norm_err);
         end
         
-        function setVariant(obj, mde)
+        function set.Variant(obj, mde)
             switch mde
                 case "Linear"
                     set_param(obj.PlantSubsystem,'LabelModeActiveChoice', 'Combined')
@@ -195,14 +204,18 @@ classdef QuadRotorSystem < handle
                     set_param(obj.PowertrainSubsystem, 'LabelModeActiveChoice', 'Nonlinear')
                     set_param(obj.PowertrainSubsystem, 'LabelModeActiveChoice', 'Nonlinear')
             end
-            
         end
         
-        function loadTestConditions(obj, flight_data)
-            setVehicleMass(obj.QR, flight_data.VehicleMass);
-            obj.QR.PT.Model.x0(1) = flight_data.StartingSOC;
-            obj.EnableStop = false;
-            set_param(obj.Name, 'StopTime', num2str(seconds(flight_data.FlightTime)));
+        function set.DistVar(obj, mde)
+            assert(ismember(mde, ["TimeSeries", "Constant", "Zeros"]));
+            obj.DistVar = mde;
+            set_param([obj.Name '/DistVar'],'LabelModeActiveChoice', mde)
+        end
+        
+        function set.RefTrajVar(obj, mde)
+            assert(ismember(mde, ["TimeSeries", "Constant", "Zeros"]));
+            obj.RefTrajVar = mde;
+            set_param([obj.Name '/RefTrajVar'],'LabelModeActiveChoice', mde)
         end
     end
     

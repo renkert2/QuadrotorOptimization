@@ -119,7 +119,7 @@ classdef BodyModel < Model
                 x_arg
                 opts.Interval double = 10
                 opts.ParentAxes matlab.graphics.axis.Axes = matlab.graphics.axis.Axes.empty()
-                opts.RefTraj ReferenceTrajectory3D = ReferenceTrajectory3D.empty()
+                opts.RefTraj timeseries = timeseries.empty()
                 opts.Annotate logical = true
                 opts.TrajectoryNames string = string.empty()
             end
@@ -134,7 +134,8 @@ classdef BodyModel < Model
             
             if ~isempty(opts.RefTraj)
                 ln_ref_flag = true;
-                ln_ref = opts.RefTraj.plot('ParentAxes', ax);
+                x = opts.RefTraj.Data;
+                ln_ref = plot3(ax, x(:,1), -x(:,2), -x(:,3), '-b');
             else
                 ln_ref_flag = false;
             end

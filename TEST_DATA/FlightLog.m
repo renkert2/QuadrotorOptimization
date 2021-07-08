@@ -269,7 +269,7 @@ classdef FlightLog < handle
             obj.Data = processTimeUS(obj);
             setCorrectedBusVoltage(obj);
             setSOCCurve(obj);
-            setThCorr(obj);
+            setESCPWM(obj);
             setActiveTimes(obj);
             setFlightTime(obj);
         end
@@ -300,23 +300,31 @@ classdef FlightLog < handle
             arguments
                 obj
                 ycat (1,1) string
-                yfields (:,1) string
+                yfields
                 opts.ActiveTime logical = false
             end
              
-            N_y = numel(yfields);
+            N_y = size(yfields,2);
             
             p = matlab.graphics.GraphicsPlaceholder.empty(N_y,0);
             for i = 1:N_y
                 x = obj.Data.(ycat).Time;
-                y = obj.Data.(ycat).(yfields(i));
+                if isstring(yfields)
+                    y = obj.Data.(ycat).(yfields(i));
+                else
+                    y = yfields(:,i);
+                end
                 if opts.ActiveTime
                     [x, I_act] = obj.time2ActiveTime(x);
                     x = x(I_act);
                     y = y(I_act);
                 end
-                s = sprintf("%s:%s", ycat,yfields(i));
-                p(i) = plot(x,y, 'DisplayName', s);
+                p(i) = plot(x,y);
+                
+                if isstring(yfields)
+                    s = sprintf("%s:%s", ycat,yfields(i));
+                    p(i).DisplayName = s;
+                end
                 hold on 
             end
             hold off
@@ -406,10 +414,25 @@ classdef FlightLog < handle
              obj.Data.BAT.SOC = q;
         end
         
-        function setThCorr(obj)
-           c = getParamValue(obj, "MOT_SPIN_MIN");
-           obj.Data.CTUN.ThOCorr = obj.Data.CTUN.ThO + c;
-           obj.Data.CTUN.ThHCorr = obj.Data.CTUN.ThH + c;
+        function setESCPWM(obj)
+           PWM_min = getParamValue(obj, "MOT_PWM_MIN");
+           if PWM_min == 0
+               PWM_min = getParamValue(obj, "RC3_MIN");
+           end
+           
+           PWM_max =  getParamValue(obj, "MOT_PWM_MAX");
+           if PWM_max == 0
+               PWM_max = getParamValue(obj, "RC3_MAX");
+           end
+           
+           rco = obj.Data.RCOU;
+           esc_pwm_raw = [rco.C1, rco.C2, rco.C3, rco.C4];
+           
+           esc_pwm_corr = (esc_pwm_raw - PWM_min)./(PWM_max - PWM_min);
+           
+           obj.Data.RCOW.ESCPWM = esc_pwm_raw;
+           obj.Data.RCOU.ESCU = esc_pwm_corr;
+           obj.Data.RCOU.ESCUMean = mean(esc_pwm_corr, 2);
         end
         
         function q = get.StartingSOC(obj)
@@ -437,6 +460,62 @@ classdef FlightLog < handle
             fname = "FlightLog_"+string(t);
             FL = obj;
             save(fname, 'FL');
+        end
+        
+        function [X,pwm] = thrustCurve(obj, time, t_i)
+            % This isn't working quite right.  
+            e = getParamValue(obj, "MOT_THST_EXPO");
+            max = getParamValue(obj, "MOT_SPIN_MAX");
+            min = getParamValue(obj, "MOT_SPIN_MIN");
+            pwm_min = getParamValue(obj, "MOT_PWM_MIN");
+            if pwm_min == 0
+                pwm_min = getParamValue(obj, "RC3_MIN");
+            end
+            
+            pwm_max =  getParamValue(obj, "MOT_PWM_MAX");
+            if pwm_max == 0
+                pwm_max = getParamValue(obj, "RC3_MAX");
+            end
+            
+%             batt_volt_max = getParamValue(obj, "BAT_VOLT_MAX");
+%             batt_volt_rest_est = interp1(obj.Data.BAT.Time, obj.Data.BAT.VoltR, time);
+%             
+%             batt_voltage_filt = batt_volt_rest_est / batt_volt_max;
+%             lift_max = batt_voltage_filt .* (1 - e) + e .* batt_voltage_filt .* batt_voltage_filt;
+            batt_voltage_filt = 1;
+            lift_max = 1;
+
+            t_r = (-(1.0-e) + sqrt((1.0-e).*(1.0-e) + 4.0 .* e .* lift_max .* t_i ))./(2.0 * e * batt_voltage_filt);
+            
+            X = min+(max - min)*t_r;
+            pwm = pwm_min+(pwm_max - pwm_min)*X;
+        end
+        
+        function ts = getDisturbanceForceTS(obj)
+            ax = obj.Data.PSC.AX;
+            ay = obj.Data.PSC.AY;
+            a = [ax ay zeros(size(ax))];
+            f = obj.VehicleMass*a;
+            
+            [t, I_act] = obj.time2ActiveTime(obj.Data.PSC.Time);
+            t = t(I_act);
+            f = f(I_act,:);
+                
+            ts = timeseries(f,seconds(t));
+        end
+        
+        function ts = getRefTrajTS(obj)
+            tx = obj.Data.PSC.TPX;
+            ty = -obj.Data.PSC.TPY;
+            tz = -obj.Data.CTUN.DAlt;
+            tz = interp1(obj.Data.CTUN.Time, tz, obj.Data.PSC.Time);
+            p = [tx, ty, tz];
+            
+            [t, I_act] = obj.time2ActiveTime(obj.Data.PSC.Time);
+            t = t(I_act);
+            p = p(I_act,:);
+            
+            ts = timeseries(p,seconds(t));
         end
     end
     
