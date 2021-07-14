@@ -13,7 +13,6 @@ classdef ModelValidation < handle
     
     methods
         function Simulate(obj)
-            setTestConditions(obj);
             obj.MO = obj.M.Simulate('Mode','Nonlinear');
         end
         
@@ -83,13 +82,30 @@ classdef ModelValidation < handle
                 flp(i).DisplayName = "Measured: "+string(flp(i).DisplayName);
             end
         end
+        
+        function flightTime(obj)
+            obj.M.QR.PT.Battery.OperatingSOCRange = [obj.FL.EndingSOC, obj.FL.StartingSOC];
+            obj.M.QR.update();
+            
+            ft_estimate = seconds(obj.M.QR.FlightTime);
+            ft_estimate.Format = 'hh:mm:ss';
+            
+            ft_actual = obj.FL.FlightTime;
+            
+            err = (ft_estimate - ft_actual)/ft_actual;
+            
+            fprintf("Estimated Flight Time: %s \n", ft_estimate);
+            fprintf("Actual Flight Time: %s \n", ft_actual);
+            fprintf("Error: %0.2f %% \n", err*100);
+            
+        end
     end
     
     methods 
         function s = setPairs(obj)
             c = {"Bus Voltage", "V", {"PT_out", "Internal Voltage"}, {"BAT", "VoltCorr"};...
-                "Bus Current", "I", {"PT_out", "Internal Current"}, {"BAT", "Curr"};...
-                "Battery SOC", "q", {"PT_out", "Battery SOC"}, {"BAT", "SOC"};...
+                "Bus Current", "I", {"PT_out", "Internal Current"}, {"BAT", "CurrCorr"};...
+                "Battery SOC", "q", {"PT_out", "Battery SOC"}, {"BAT", ["SOCCurr"]};...
                 "Throttle", "u", {"u_out"}, {"RCOU", ["ESCUMean"]};...
                 "Height", "m", {"y_out", "Z Position"}, {"POS", "RelHomeAlt"};...
                 };

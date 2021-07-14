@@ -252,6 +252,8 @@ classdef FlightLog < handle
         BootTime datetime
         StartingSOC double
         EndingSOC double
+        BatteryResistance double
+        
     end
     
     methods
@@ -267,7 +269,7 @@ classdef FlightLog < handle
         function init(obj)
             obj.Data = makeDataStruct(obj);
             obj.Data = processTimeUS(obj);
-            setCorrectedBusVoltage(obj);
+            setVoltCorr(obj);
             setSOCCurve(obj);
             setESCPWM(obj);
             setActiveTimes(obj);
@@ -302,13 +304,19 @@ classdef FlightLog < handle
                 ycat (1,1) string
                 yfields
                 opts.ActiveTime logical = false
+                opts.DurationTime logical = false
             end
              
             N_y = size(yfields,2);
             
             p = matlab.graphics.GraphicsPlaceholder.empty(N_y,0);
             for i = 1:N_y
-                x = obj.Data.(ycat).Time;
+                if (~opts.ActiveTime) && opts.DurationTime
+                    x = obj.Data.(ycat).TimeUS/1e6;
+                    x = seconds(x);
+                else
+                    x = obj.Data.(ycat).Time;
+                end
                 if isstring(yfields)
                     y = obj.Data.(ycat).(yfields(i));
                 else
@@ -393,7 +401,7 @@ classdef FlightLog < handle
             t = obj.BootTime + seconds(time_us/1e6);
         end
         
-        function v_corr = setCorrectedBusVoltage(obj)
+        function v_corr = setVoltCorr(obj)
             bat = obj.Data.BAT;
             v = bat.Volt;
             
@@ -406,12 +414,29 @@ classdef FlightLog < handle
         end
         
         function q = setSOCCurve(obj)
+            % Based on V vs. SOC Curve
              bat = obj.Data.BAT;
              v = bat.VoltCorr;
              q = interp1(obj.BatteryLookup.V_OCV * obj.BatteryCells, obj.BatteryLookup.SOC, v, 'pchip', 'extrap');
              q(q > 1) = 1;
              q(q < 0) = 0;
              obj.Data.BAT.SOC = q;
+             
+             % Current Correction
+             i_tot = bat.CurrTot(end);
+             i_tot_act = (obj.StartingSOC - obj.EndingSOC)*obj.BatteryCapacity;
+             scale_fact = i_tot_act/i_tot;
+             obj.Data.BAT.CurrCorr = obj.Data.BAT.Curr*scale_fact;
+             obj.Data.BAT.CurrTotCorr = obj.Data.BAT.CurrTot*scale_fact;
+             
+             % Based on Corrected Current
+             i = obj.Data.BAT.CurrTotCorr;
+             obj.Data.BAT.SOCCurr = (obj.BatteryCapacity*obj.StartingSOC - i)./obj.BatteryCapacity;
+        end
+        
+        function r_p = get.BatteryResistance(obj)
+            r = obj.Data.BAT.Res;
+            r_p = mean(r,1);
         end
         
         function setESCPWM(obj)
@@ -516,6 +541,61 @@ classdef FlightLog < handle
             p = p(I_act,:);
             
             ts = timeseries(p,seconds(t));
+        end
+        
+        function ts = getBodyStateTS(obj)
+            % Order matches states of BodyModel
+            PSC = obj.Data.PSC;
+            convToPSCTime = @(from_time, from_dat) interp1(from_time, from_dat, PSC.Time);
+            
+            CTUN = obj.Data.CTUN;
+            ATT = obj.Data.ATT;
+            NKF1 = obj.Data.NKF1;
+            
+            
+            P(:,1) = PSC.PX;
+            P(:,2) = -PSC.PY;
+            P(:,3) = convToPSCTime(CTUN.Time, -CTUN.Alt);
+            P(:,4) = PSC.VX;
+            P(:,5) = -PSC.VY;
+            P(:,6) = convToPSCTime(NKF1.Time, NKF1.VD);
+            
+            convATTToPSC = @(d) convToPSCTime(ATT.Time, ATT.(d));
+            P(:,7) = deg2rad(convATTToPSC("Roll"));
+            P(:,8) = deg2rad(convATTToPSC("Pitch"));
+            P(:,9) = deg2rad(convATTToPSC("Yaw"));
+            
+            [t, I_act] = obj.time2ActiveTime(obj.Data.PSC.Time);
+            t = t(I_act);
+            P = P(I_act,:);
+            
+            ts = timeseries(P, seconds(t));
+        end
+        
+        function ts = getBodyAccelTS(obj)
+            % [a_x a_y a_z omega_dot_x omega_dot_y omega_dot_z]
+            PSC = obj.Data.PSC;
+            convToPSCTime = @(from_time, from_dat) interp1(from_time, from_dat, PSC.Time);
+           
+            RATE = obj.Data.RATE;
+            
+            
+            IMU = obj.Data.IMU;
+            
+            a(:,1) = PSC.AX;
+            a(:,2) = PSC.AY;
+            a(:,3) = convToPSCTime(RATE.Time, RATE.A);
+            
+            omega_dot(:,1) = convToPSCTime(IMU.Time ,IMU.GyrX);
+            omega_dot(:,2) = convToPSCTime(IMU.Time, IMU.GyrY);
+            omega_dot(:,3) = convToPSCTime(IMU.Time, IMU.GyrZ);
+            
+            adat = [a omega_dot];
+            [t, I_act] = obj.time2ActiveTime(obj.Data.PSC.Time);
+            t = t(I_act);
+            adat = adat(I_act,:);
+            
+            ts = timeseries(adat, seconds(t));
         end
     end
     

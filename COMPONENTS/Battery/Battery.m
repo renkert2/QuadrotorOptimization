@@ -14,7 +14,9 @@ classdef Battery < Component
         % Dependent Params - Dependency set in init()
         R_s compParam = compParam('R_s', (10e-3) / 3, 'Unit', "Ohm") % Series Resistance - Ohms - From Turnigy Website
         Mass compParam = extrinsicProp("Mass", NaN, 'Unit', "kg"); % Dependent param defined in init
+        Price compParam = extrinsicProp("Price", NaN, 'Unit', "USD");
         
+        OperatingSOCRange double = [0 1]
         variableV_OCV logical = true
         V_OCV_nominal double = 3.7 %Nominal Open Circuit Voltage = V_OCV_nominal*V_OCV_curve(q)
         V_OCV_curve = symfun(1, sym('q')) % Protected in set method
@@ -27,12 +29,15 @@ classdef Battery < Component
     end
     
     properties (SetAccess = private)
-        V_OCV_averaged
-        
-        Averaged_SOC double = 1 % SOC at which V_OCV(q) = V_OCV_Average
         Nominal_SOC double = 1 % SOC at which V_OCV(q) = V_OCV_nominal
         
         Fit paramFit
+    end
+    
+    properties (Dependent)
+        V_OCV_averaged double
+        Averaged_SOC double % SOC at which V_OCV(q) = V_OCV_Average
+        OperatingCapacity double
     end
     
     methods        
@@ -48,12 +53,28 @@ classdef Battery < Component
              
             nq = double(vpasolve(obj.V_OCV_curve == 1));
             obj.Nominal_SOC = nq(1);
-            
-            ave_vocv_curve = double(vpaintegral(obj.V_OCV_curve, 0, 1));
-            aq = double(vpasolve(obj.V_OCV_curve == ave_vocv_curve));
-            obj.Averaged_SOC = aq(1);
-            
-            obj.V_OCV_averaged = ave_vocv_curve*obj.V_OCV_nominal;
+        end
+        
+        function q = get.Averaged_SOC(obj)
+            % SOC at which V_OCV(q) = V_OCV_Average, average taken over
+            % operating range
+            if obj.variableV_OCV
+                min_soc = obj.OperatingSOCRange(1);
+                max_soc = obj.OperatingSOCRange(2);
+                ave_vocv_curve = double(vpaintegral(obj.V_OCV_curve, min_soc, max_soc))/(max_soc - min_soc);
+                aq = double(vpasolve(obj.V_OCV_curve == ave_vocv_curve));
+                q = aq(1);
+            else
+                q = 1;
+            end
+        end
+        
+        function v = get.V_OCV_averaged(obj)
+            v = double(obj.V_OCV_nominal*obj.V_OCV_curve(obj.Averaged_SOC));
+        end
+        
+        function c = get.OperatingCapacity(obj)
+            c = obj.Capacity.Value*range(obj.OperatingSOCRange);
         end
     end
     
@@ -65,17 +86,14 @@ classdef Battery < Component
                     setV_OCV_curve(obj,LiPo_42V_Lookup);
                 end
             else
-                obj.V_OCV_curve = symfun(1, sym('q'));
-                obj.V_OCV_averaged = obj.V_OCV_nominal;
-                
-                obj.Averaged_SOC = 1; % SOC at which V_OCV(q) = V_OCV_Average
+                obj.V_OCV_curve = symfun(1, sym('q')); 
                 obj.Nominal_SOC = 1;
             end
             
             
             load BatteryFit.mat BatteryFit;
             BatteryFit.Inputs = [obj.N_s, obj.Q];
-            BatteryFit.Outputs = [obj.R_s, obj.Mass];
+            BatteryFit.Outputs = [obj.R_s, obj.Mass, obj.Price];
             BatteryFit.setOutputDependency();
             obj.Fit = BatteryFit;
             

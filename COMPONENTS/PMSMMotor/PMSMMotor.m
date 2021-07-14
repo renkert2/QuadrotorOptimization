@@ -13,6 +13,7 @@ classdef PMSMMotor < Component
         
         Mass extrinsicProp = extrinsicProp('Mass',0.04, 'Unit', "kg");
         D compParam = compParam('D', 0.05, 'Unit', "m");
+        Price compParam = extrinsicProp('Price', NaN, 'Unit', "USD");
     end
     
     properties (Dependent)
@@ -59,7 +60,7 @@ classdef PMSMMotor < Component
         function init(obj)
             load MotorFit.mat MotorFit;
             MotorFit.Inputs = [obj.kV, obj.Rm];
-            MotorFit.Outputs = [obj.Mass, obj.D];
+            MotorFit.Outputs = [obj.Mass, obj.D, obj.Price];
             MotorFit.setOutputDependency;
             obj.Fit = MotorFit;
             

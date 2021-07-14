@@ -17,6 +17,7 @@ classdef Propeller < Component
         k_T compParam = compParam('k_T', 0.0819) % Thrust coefficient - N/(s^2*kg*m^2), speed in rev/s.
         
         Mass extrinsicProp = extrinsicProp('Mass', 0.008, 'Unit', "kg")
+        Price extrinsicProp = extrinsicProp('Price', NaN, 'Unit', "USD");
         J compParam = compParam('J', 2.1075e-05,'Unit', "kg*m^2") % Rotational Inertia - kg*m^2 from "Stabilization and Control of Unmanned Quadcopter (Jiinec)
         
         rho compParam = compParam('rho', 1.205, 'Unit', "kg/m^3", 'Description', "Air Density") % Air Density - kg/m^3
@@ -56,7 +57,7 @@ classdef Propeller < Component
         function init(obj)
             load PropellerFit.mat PropellerFit;
             PropellerFit.Inputs = [obj.D, obj.P];
-            PropellerFit.Outputs = [obj.k_P, obj.k_T, obj.Mass];
+            PropellerFit.Outputs = [obj.k_P, obj.k_T, obj.Mass, obj.Price];
             PropellerFit.setOutputDependency;
             obj.Fit = PropellerFit;
             

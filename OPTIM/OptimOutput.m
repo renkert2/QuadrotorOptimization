@@ -3,9 +3,12 @@ classdef OptimOutput
     %   Detailed explanation goes here
     
     properties
+        OptimTime duration % Time required to complete optimization
         Objective OptimObjectives
-        
         ParamVals (:,1) compParamValue
+        
+        X0
+        F0
         X_opt
         F_opt
         
@@ -19,7 +22,14 @@ classdef OptimOutput
         DesignData
     end
     
+    properties (Dependent)
+        PercentChange
+    end
+    
     methods
+        function p = get.PercentChange(obj)
+            p = (obj.F_opt - obj.F0)./obj.F0;
+        end
         function s = lambdaData(obj_array)
             N = numel(obj_array);
             l = [obj_array.lambda];

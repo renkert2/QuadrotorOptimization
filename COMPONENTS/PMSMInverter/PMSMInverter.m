@@ -8,10 +8,11 @@ classdef PMSMInverter < Component
         
         L {mustBeParam} = 0;
         C {mustBeParam} = 0;
-        R_1 {mustBeParam} = 0.01;
+        R_1 compParam = compParam("R", 0.01, 'Unit', 'Ohm');
         R_2 {mustBeParam} = 0;
         
         Mass extrinsicProp = extrinsicProp('Mass', 0.03, 'Unit', "kg");
+        Price extrinsicProp = extrinsicProp('Price', NaN, 'Unit', "USD");
     end
     
     methods

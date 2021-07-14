@@ -3,12 +3,15 @@ classdef QuadRotor < System
         rho double = 1.205 % Air Density - kg/m^3
         Height double = 0.1 % Approximate Height of the quadrotor in m, used to estimate drag
         DragCoefficient double = 1.2
+        MaxPropDiameter double = Inf % meters
     end
     
     properties (SetAccess = private)
         % Dependent Parameters - Properties that are functions of the QuadRotor
         % Parameters
         Mass extrinsicProp % Don't construct new one - already exists
+        Price extrinsicProp
+        
         J compParam  = compParam("J");% Inertia Taken about COM
         
         HoverThrust function_handle % Thrust required to hover
@@ -105,8 +108,8 @@ classdef QuadRotor < System
         function setParamQuantities(obj)                       
             % Mass
             exps = obj.Params.extrinsicProps;
-            masses = getProp(exps, 'Mass');
-            obj.Mass = masses(end);
+            obj.Mass = getProp(exps, 'Mass', obj); % Method takes Sym and Parent as input
+            obj.Price = getProp(exps, 'Price', obj);
             
             % Inertia
             J = obj.J;
@@ -154,7 +157,7 @@ classdef QuadRotor < System
                 obj
             end
             
-            cap = obj.PT.Battery.Capacity.Value; % A*s
+            cap = obj.PT.Battery.OperatingCapacity; % A*s
             ave_current = obj.SS_QAve.BusCurrent;
             flight_time = cap/ave_current;
         end

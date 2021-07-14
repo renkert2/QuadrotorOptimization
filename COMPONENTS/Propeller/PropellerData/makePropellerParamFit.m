@@ -1,18 +1,14 @@
 % Construct paramFit object
-pf = paramFit(2,3);
+pf = paramFit(2,4);
 
 % Set Data
 load PropellerComponentData.mat PropellerComponentData;
 [t,~] = table(PropellerComponentData);
 
 input_data = [t.D, t.P];
-output_data = [t.k_P, t.k_T, t.Mass];
+output_data = [t.k_P, t.k_T, t.Mass, t.Price];
 pf.setData(input_data, output_data);
 pf.setBoundary();
-
-%%
-pf.cftool(3)
-
 
 %% Set Models
 % k_P
@@ -48,7 +44,11 @@ opts_mass.Normalize = 'on';
 opts_mass.Robust = 'Bisquare';
 opts_mass.Span = 0.3;
 
-pf.setModels(ft_kp, opts_kp, ft_kt, opts_kt, ft_mass, opts_mass);
+% Price Fit
+ft_price = fittype( 'poly21' );
+opts_price = fitoptions('Method', 'LinearLeastSquares');
+
+pf.setModels(ft_kp, opts_kp, ft_kt, opts_kt, ft_mass, opts_mass, ft_price, opts_price);
 
 %%
 PropellerFit = pf;

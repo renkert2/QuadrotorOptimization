@@ -3,15 +3,19 @@ classdef SearchOutput
     %   Detailed explanation goes here
     
     properties
+        SearchTime duration % Time required to complete search
         Objective (1,1) OptimObjectives
-        OptimalConfiguration (1,:) ComponentData
-        OptimalFVal (1,1) double
+
+        F0 (1,1)
+        F_opt (1,1)
+        
         OptimalIteration (1,1) uint16
+        OptimalConfiguration (1,:) ComponentData
         SortedConfigurations (:,:) ComponentData
-        SortedFVals (:,1) double
-        SortedDistances (:,:) double
+        SortedFVals (:,1)
+        SortedDistances (:,:)
         SortedComponentIndices (:,:) double
-        NormalizedDistances(:,1) double
+        NormalizedDistances(:,1)
         Weights
         DistanceMode string
         ModifiedParameters (:,1) compParam
@@ -19,10 +23,13 @@ classdef SearchOutput
     end
     
     properties (Dependent)
-
+        PercentChange
     end
     
     methods
+        function p = get.PercentChange(obj)
+            p = (obj.F_opt - obj.F0)./obj.F0;
+        end
         function plot(obj)
             figure('Name', 'Nearest Neighbor Search Output')
             

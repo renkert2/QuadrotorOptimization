@@ -2,46 +2,42 @@ classdef Optimization < handle
     properties
         QR QuadRotor 
         OptiVars (:,1) optiVar
+        DependentParams (:,1) compParam
         
         Objective OptimObjectives = "FlightTime" 
         
-        CD ComponentData % ComponentDatabase
-        
-        SimulationBased logical = false;
-        SimulationOpts cell = {'InterpolateTime', false, 'Timeout', 30} % Options pertaining to the simulation-based flight time calculation
-        ReferenceTrajectory function_handle = @(t) (t>0) % Reference Trajectory used for Simulation-Based Optimization
-        
+        CD ComponentData % ComponentDatabase 
     end
     
     properties (Hidden)
+        X0Params compParamValue
         X_prev double 
     end
     
     methods
         function obj = Optimization(qr, cd)
-            if nargin == 0
-                load QROpt.mat QROpt;
-                qr = QROpt;
-            end
             if nargin == 1
-                load ComponentDatabase.mat ComponentDatabase;
-                cd = ComponentDatabase;
+                load BatteryComponentData.mat BatteryComponentData;
+                load PropellerComponentData.mat PropellerComponentData;
+                load MotorComponentData.mat MotorComponentData;
+                cd = [BatteryComponentData; PropellerComponentData; MotorComponentData];
             end
             
             obj.QR = qr;
+            obj.X0Params = getValues(qr.Params);
             obj.CD = cd;
             obj.init();
         end
         
         function init(obj)
-            batt = obj.QR.Battery;
-            prop = obj.QR.Propeller;
-            motor = obj.QR.Motor;
+            batt = obj.QR.PT.Battery;
+            prop = obj.QR.PT.Propeller;
+            motor = obj.QR.PT.Motor;
             
             % Set Optimization Variables
-            OV(1) = optiVar(prop.D, prop.Fit.Boundary.X_lb(1),prop.Fit.Boundary.X_ub(1));
+            OV(1) = optiVar(prop.D, prop.Fit.Boundary.X_lb(1), min(prop.Fit.Boundary.X_ub(1), obj.QR.MaxPropDiameter));
             OV(2) = optiVar(prop.P, prop.Fit.Boundary.X_lb(2), prop.Fit.Boundary.X_ub(2));            
-            OV(3) = optiVar(batt.N_s, batt.Fit.Boundary.X_lb(1),batt.Fit.Boundary.X_ub(1), 'Enabled', true); % Typically voltage is selected to highest possible value           
+            OV(3) = optiVar(batt.N_s, batt.Fit.Boundary.X_lb(1),batt.Fit.Boundary.X_ub(1)); % Typically voltage is selected to highest possible value           
             OV(4) = optiVar(batt.Q, batt.Fit.Boundary.X_lb(2),batt.Fit.Boundary.X_ub(2));
             OV(5) = optiVar(motor.kV, motor.Fit.Boundary.X_lb(1), motor.Fit.Boundary.X_ub(1));
             OV(6) = optiVar(motor.Rm, motor.Fit.Boundary.X_lb(2), motor.Fit.Boundary.X_ub(2));
@@ -49,47 +45,37 @@ classdef Optimization < handle
             obj.OptiVars = OV';
             
             % Enable Dependencies
-            batt.R_s.Dependent = true;
-            batt.Mass.Dependent = true;
-            motor.D.Dependent = true;
-            motor.Mass.Dependent = true;
-            prop.k_P.Dependent = true;
-            prop.k_T.Dependent = true;
-            prop.Mass.Dependent = true;
+            obj.DependentParams = [...
+                batt.R_s;
+                batt.Mass;
+                batt.Price;
+                motor.D;
+                motor.Mass;
+                motor.Price;
+                prop.k_P;
+                prop.k_T;
+                prop.Mass;
+                prop.Price;];
+            storeDependentDefault(obj.DependentParams);
         end
-        
-        function main(obj)
-            oo = obj.Optimize();
-            N_max = struct('Battery', 3, 'PMSMMotor', 3, 'Propeller', 3);
-            
-%             batt_weights = struct('N_s', 1, 'Q', 1);
-%             prop_weights = struct('D', 1, 'P', 1);
-%             mot_weights = struct('kV', 1, 'Rm', 1);
 
-            
-            % Combine paramVals and G, assign to WeightStruct
-            
-            
-           % WeightStruct = struct('Battery', batt_weights, 'PMSMMotor', mot_weights, 'Propeller', prop_weights);
-            so = searchNearest(obj, oo, N_max, WeightStruct);
-        end
-        
         function [OO] = Optimize(obj, opts)
             arguments
                 obj
-                opts.DiffMinChange = 1e-4
                 opts.OptimizationOpts cell = {}
                 opts.OptimizationOutput logical = true
                 opts.InitializeFromValue logical = false
                 opts.CaptureState logical = true
                 opts.CheckPrevious logical = true
-                opts.RestoreDependencies logical = true % Ensure parameters with dependencies are reset to their default values before continuous optimization
+                opts.Timer logical = true
+            end
+            
+            if opts.Timer
+                timer = tic;
             end
             
             optimopts = optimoptions('fmincon', 'Algorithm', 'sqp');
-            if obj.SimulationBased
-                optimopts = optimoptions(optimopts, 'DiffMinChange', opts.DiffMinChange);
-            end
+
             if opts.OptimizationOutput
                 optimopts = optimoptions(optimopts, 'Display', 'iter-detailed', 'PlotFcn', {@optimplotx,@optimplotfval,@optimplotfirstorderopt});
             end
@@ -101,18 +87,18 @@ classdef Optimization < handle
                 x0 = X0(obj.OptiVars);
             end
             
-            if opts.RestoreDependencies
-                restoreDependentDefault(obj.QR.Params);
-            end
+            setDependent(obj.DependentParams, true);
+            obj.updateQR(false);
             
             lb = LB(obj.OptiVars);
             ub = UB(obj.OptiVars);
             
             OO = OptimOutput();
             OO.Objective = obj.Objective;
-            
-            qr_con_in_cache = obj.QR.ConstrainInput; % Save previous state of QR.ConstrainInput
-            obj.QR.ConstrainInput = false; % Hand input constraint to optimization solver
+            OO.X0 = unscale(obj.OptiVars);
+            OO.F0 = obj.processF(objfun(obj, true));
+            qr_con_in_cache = obj.QR.PT.SimpleModel.ConstrainInput; % Save previous state of QR.ConstrainInput
+            obj.QR.PT.SimpleModel.ConstrainInput = false; % Hand input constraint to optimization solver
             
             [X_opt_s, f_opt, OO.exitflag, ~, OO.lambda, grad_s, hessian_s] = fmincon(@objfun_local ,x0, [], [], [], [], lb, ub, @nlcon_local, optimopts);
             F_opt = obj.processF(f_opt); % Transform objective function output to desired output
@@ -128,7 +114,7 @@ classdef Optimization < handle
             lambda_desc.ineqnonlin = ["Battery", "Propeller", "Motor", "Input"]; % Hardcoded for now.  Would be good to have Constraint objects at some point
             OO.lambdaDesc = lambda_desc;
                 
-            obj.QR.ConstrainInput = qr_con_in_cache; 
+            obj.QR.PT.SimpleModel.ConstrainInput = qr_con_in_cache; 
          
             % Set Current Values to Optimal Value in OptiVars
             setVals(obj.OptiVars, X_opt_s);
@@ -136,11 +122,15 @@ classdef Optimization < handle
             OO.X_opt = unscale(obj.OptiVars);
             
             % Get optimal ParamVals to load later or for discrete search
-            OO.ParamVals = getValues(vertcat(obj.OptiVars.Child));
+            OO.ParamVals = getValues(filterEnabled(obj.OptiVars, "Child"));
             
             if opts.CaptureState
                 OO.PerformanceData = obj.QR.PerformanceData;
                 OO.DesignData = obj.QR.DesignData;
+            end
+            
+            if opts.Timer
+                OO.OptimTime = seconds(toc(timer));
             end
             
             function f = objfun_local(X_s)
@@ -307,7 +297,7 @@ classdef Optimization < handle
             end
         end
         
-        function so = searchNearestBrute(obj, oo, N_max_search, N_max_comb, opts)
+        function so = searchNearest(obj, target_arg, N_max_search, N_max_comb, opts)
             % CAUTION: This only works if all components of the same Type
             % have the same parameter values.  Need to add additional 
             % Functionality if there are two components of the same type with 
@@ -315,56 +305,77 @@ classdef Optimization < handle
             
             arguments
                 obj
-                oo OptimOutput
+                target_arg = []
                 N_max_search = inf
                 N_max_comb (1,1) double = inf
                 opts.EnforceBounds logical = true
+                opts.BruteResort logical = false
+                opts.DistanceMode string = "Norm" % Options: "Norm", "WeightedNorm"
+                opts.Weights = []
                 opts.Display logical = false
                 opts.Plot logical = false
+                opts.Timer logical = true
             end
             
-            target = oo.ParamVals;
+            if opts.Timer
+                timer = tic;
+            end
+            
+            if ~isempty(target_arg)
+                if isa(target_arg, 'OptimOutput')
+                    target = target_arg.ParamVals;
+                elseif isa(target_arg, 'compParamVal')
+                    target = target_arg;
+                end
+            else
+                target = getValues(filterEnabled(obj.OptiVars, "Child"));
+            end
 
             % Get Initial component sets based on distance from optimal
             % point
             if opts.EnforceBounds
-                lb = vertcat(obj.OptiVars.lb);
-                ub = vertcat(obj.OptiVars.ub);
+                lb = filterEnabled(obj.OptiVars,"lb");
+                ub = filterEnabled(obj.OptiVars,"ub");
             else
                 lb = [];
                 ub = [];
             end
-            [cd,~,comp_names] = filterNearest(obj.CD, target, N_max_search, 'LB', lb, 'UB', ub);
-
-            % Cache QuadRotor Parameters
-            loadValues(obj.QR.Params, target);
-            oopv_cache = getValues(obj.QR.Params);
             
-            d = cell(size(cd));
-            cd_sorted = cell(size(cd));
-            for i = 1:numel(d)
-                comps = cd{i};
-                N_comps = numel(comps);
-                d_objective_comp = NaN(N_comps, 1);
-                for j = 1:N_comps
-                    % Evaluate Objective
-                    [fval, ~] = evalCombination(obj, comps(j), opts.Display);
-                    % Reset QR
-                    loadValues(obj.QR.Params, oopv_cache);
-                    d_objective_comp(j) = fval;
+            F0 = processF(obj, objfun(obj, true));
+            
+            [cd,d,comp_names] = filterNearest(obj.CD, target, N_max_search, 'LB', lb, 'UB', ub, 'DistanceMode', opts.DistanceMode, 'Weights', opts.Weights);
+            
+            setDependent(obj.DependentParams, true); % We want to make sure that any parameter values we don't suppy are handled by the surrogate models
+            if opts.BruteResort
+                loadValues(obj.QR.Params, target); % Set QR Parameters to the optimal target design
+                oopv_cache = getValues(obj.QR.Params); % Cache QuadRotor Parameters
+                d_sorted = cell(size(cd));
+                cd_sorted = cell(size(cd));
+                for i = 1:numel(d_sorted)
+                    comps = cd{i};
+                    N_comps = numel(comps);
+                    d_objective_comp = NaN(N_comps, 1);
+                    for j = 1:N_comps
+                        % Evaluate Objective
+                        [fval, ~] = evalCombination(obj, comps(j), opts.Display);
+                        d_objective_comp(j) = fval;
+                        % Reset QR
+                        loadValues(obj.QR.Params, oopv_cache);
+                    end
+                    [d_objective_comp_sorted, I] = sort(d_objective_comp);
+                    d_sorted{i} = d_objective_comp_sorted;
+                    cd_sorted{i} = comps(I); % Reassign components to cd in the new order
                 end
-                [d_objective_comp_sorted, I] = sort(d_objective_comp);
-                d{i} = d_objective_comp_sorted;
-                cd_sorted{i} = comps(I); % Reassign components to cd in the new order
+                
+                d = d_sorted;
+                cd = cd_sorted;
             end
             
             % Apply second N_max here if necessary to reduce number of
             % combinations to evaluate
             
-            [comb_array,comb_I] = combinations(cd_sorted{:});
-            
+            [comb_array,comb_I] = combinations(cd{:});
             sz = size(comb_array);
-            
             
             % comb_d: matrix of size comb_array corresponding to distance
             % of component from target
@@ -374,8 +385,18 @@ classdef Optimization < handle
                 comb_d(:,i_col) = col(comb_I(:,i_col));
             end
             
-            % Sort component combinations by mean objective function value
-            comb_d_norm = mean(comb_d,2);
+            if opts.BruteResort
+                % Sort component combinations by mean objective function value
+                comb_d_norm = mean(comb_d,2);
+            else
+                switch opts.DistanceMode
+                    case "Norm"
+                        comb_d_norm = vecnorm(comb_d, 2, 2);
+                    case "WeightedNorm"
+                        comb_d_norm = vecnorm(comb_d, 2, 2);
+                end
+            end
+                       
             [sorted_d_norm, I_d] = sort(comb_d_norm);
             
             comb_array = comb_array(I_d, :);
@@ -396,6 +417,7 @@ classdef Optimization < handle
                 % Objective Function Plot
                 ax_f = subplot(2,1,1);
                 an_f = animatedline(ax_f);
+
                 title("Objective Function")
                 ylabel('f')
                 
@@ -411,14 +433,25 @@ classdef Optimization < handle
                 % Distance Plot
                 ax_d = subplot(2,1,2);
                 co = colororder; % Gets default plot colors as rgb matrix
+                
+                if opts.BruteResort
+                    % Sort component combinations by mean objective function value
+                    aggregate_label = "Average";
+                    individual_label = "ObjFun";
+                else
+                    aggregate_label = "Norm";
+                    individual_label = "d";
+                end
+                
                 for i = 1:sz(2)
                     color = co(i,:);
                     an_d(i) = animatedline(ax_d, 'DisplayName', comp_names(i), 'Color', color);
                 end
-                an_d_norm = animatedline(ax_d, 'DisplayName', "Average");
                 
-                title("Individual Objective Function Values")
-                ylabel('d');
+                an_d_norm = animatedline(ax_d, 'DisplayName', aggregate_label);
+                
+                title("Component Distance Metric")
+                ylabel(individual_label);
                 xlabel("Iteration")
                 legend
             end
@@ -483,7 +516,8 @@ classdef Optimization < handle
             so = SearchOutput();
             so.Objective = obj.Objective;
             so.OptimalConfiguration = opt_comb;
-            so.OptimalFVal = opt_fval;
+            so.F0 = F0;
+            so.F_opt = obj.processF(opt_fval);
             so.OptimalIteration = opt_i;
             so.SortedConfigurations = sorted_combs;
             so.SortedFVals = sorted_FVals;
@@ -493,6 +527,9 @@ classdef Optimization < handle
             so.ModifiedParameters = pmod;
             so.ComponentNames = comp_names;
             so.DistanceMode = "Norm";
+            if opts.Timer
+                so.SearchTime = seconds(toc(timer));
+            end
             
             function [fval, pmod] = evalCombination(obj, comb, dispflag)
                 cpv = vertcat(comb.Data);
@@ -502,7 +539,7 @@ classdef Optimization < handle
                 
                 % Cache Dependency of Modified Parameters and make all
                 % Independent
-                setDependentTemporary(pmod, false); % Makes each element of pmod independent
+                dep_cache = setDependent(pmod, false); % Makes each element of pmod independent
                 
                 % Update QuadRotor
                 try
@@ -525,7 +562,7 @@ classdef Optimization < handle
                 
                                
                % Restore Dependency of Modified Parameters before returning
-                restoreDependentDefault(pmod);
+                setDependent(pmod, dep_cache);
                 
                 if dispflag
                     disp("Configuration:");
@@ -534,201 +571,12 @@ classdef Optimization < handle
                 end 
             end
         end
-        
-        function so = searchNearest(obj, oo, N_max, opts)
-            % CAUTION: This only works if all components of the same Type
-            % have the same parameter values.  Need to add additional 
-            % Functionality if there are two components of the same type with 
-            % different parameter values.  
-            
-            arguments
-                obj
-                oo OptimOutput
-                N_max = inf
-                opts.DistanceMode string = "Norm" % Options: "Norm", "WeightedNorm", "TaylorSeries"
-                opts.Weights = []
-                opts.Tolerance = []
-                opts.UseGradient logical = true
-                opts.UseHessian logical = true
-                opts.Display logical = false
-                opts.Plot logical = false
-            end
-            
-            target = oo.ParamVals;
-            
-            grad = [];
-            hessian = [];
-            if opts.DistanceMode == "TaylorSeries"
-                if opts.UseGradient
-                    grad = oo.grad; % Scale the gradient by target values
-                end
-                if opts.UseHessian
-                    hessian = oo.hessian; % Scale the hessian by target values
-                end
-            end
-            
-            [cd,d,comp_names] = filterNearest(obj.CD, target, N_max, 'DistanceMode', opts.DistanceMode, 'Weights', opts.Weights, 'Gradient', grad, 'Hessian', hessian, 'Tolerance', opts.Tolerance);
 
-            [comb_array,comb_I] = combinations(cd{:});
-            
-            sz = size(comb_array);
-            N_combs = sz(1);
-            
-            % comb_d: matrix of size comb_array corresponding to distance
-            % of component from target
-            comb_d = NaN(sz);
-            for i_col = 1:sz(2)
-                col = d{i_col};
-                comb_d(:,i_col) = col(comb_I(:,i_col));
-            end
-            
-            % Sort component combinations by norm of distances from target
-            switch opts.DistanceMode
-                case "Norm"
-                    comb_d_norm = vecnorm(comb_d, 2, 2);
-                case "WeightedNorm"
-                    comb_d_norm = vecnorm(comb_d, 2, 2);
-                case "TaylorSeries"
-                    comb_d_norm = sum(comb_d, 2);
-            end
-            
-            [sorted_d_norm, I_d] = sort(comb_d_norm);
-            
-            comb_array = comb_array(I_d, :);
-            comb_d = comb_d(I_d, :);
-            
-            if opts.Plot
-                figure('Name', 'Nearest Neighbor Search')
-                
-                % Objective Function Plot
-                ax_f = subplot(2,1,1);
-                an_f = animatedline(ax_f);
-                title("Objective Function")
-                ylabel('f')
-                
-                % Distance Plot
-                ax_d = subplot(2,1,2);
-                co = colororder; % Gets default plot colors as rgb matrix
-                for i = 1:sz(2)
-                    color = co(i,:);
-                    an_d(i) = animatedline(ax_d, 'DisplayName', comp_names(i), 'Color', color);
-                end
-                an_d_norm = animatedline(ax_d, 'DisplayName', "Norm Distance");
-                
-                title("Component Distance")
-                ylabel('d');
-                xlabel("Iteration")
-                legend
-            end
-
-            fvals = NaN(N_combs, 1);
-            for i = 1:N_combs
-               comb = comb_array(i,:); % Array of ComponentData objects
-               
-               if opts.Display
-                    fprintf("Evaluating Configuration: %d\n", i)
-               end
-               
-               [fvals(i,1), ~] = evalCombination(obj, comb, opts.Display);
-               
-               if opts.Plot
-                   addpoints(an_f, i, fvals(i,1));
-                   for j = 1:sz(2)
-                       addpoints(an_d(j), i, comb_d(i,j))
-                   end
-                   addpoints(an_d_norm, i, sorted_d_norm(i));
-                   drawnow
-               end
-
-            end 
-            
-            % Sort component configurations from best to worst
-            [sorted_fvals,I] = sort(fvals, 'ascend');
-            sorted_combs = comb_array(I,:); % Component combinations sorted by objective
-            sorted_distances = comb_d(I,:);
-            normalized_distances = sorted_d_norm(I_d,:);
-            
-            % Set QuadRotor to Optimal Configuration
-            if opts.Display
-                disp("Optimal Configuration: ")
-            end
-            [~,pmod] = evalCombination(obj, sorted_combs(1,:), opts.Display);
-            % All of pmod currently independent.
-            
-            sorted_FVals = processF(obj, sorted_fvals);
-            
-            % Package Output
-            so = SearchOutput();
-            so.Objective = obj.Objective;
-            so.SortedComponentSets = sorted_combs;
-            so.SortedFVals = sorted_FVals;
-            so.SortedDistances = sorted_distances;
-            so.NormalizedDistances = normalized_distances;
-            so.ModifiedParameters = pmod;
-            so.ComponentNames = comp_names;
-            so.DistanceMode = opts.DistanceMode;
-            so.Weights = opts.Weights;
-            
-            function [fval, pmod] = evalCombination(obj, comb, dispflag)
-                cpv = vertcat(comb.Data);
-                
-                % Load Values into Parameters
-                pmod = loadValues(obj.QR.Params, cpv);
-                
-                % Cache Dependency of Modified Parameters and make all
-                % Independent
-                setDependentTemporary(pmod, false); % Makes each element of pmod independent
-                
-                % Update QuadRotor
-                try
-                    updateQR(obj, false);
-                    valid = true;
-                catch
-                    valid = false;
-                end
-                
-                % Check Constraints
-                if valid
-                    [c,~] = nlcon(obj, valid);
-                    if any(c > 0)
-                        valid = false;
-                    end
-                end
-                
-                % Evaluate and Store Objective Function
-                fval = objfun(obj, valid);
-                
-                               
-               % Restore Dependency of Modified Parameters before returning
-                restoreDependentDefault(pmod);
-                
-                if dispflag
-                    disp("Configuration:");
-                    disp(summaryTable(comb))
-                    fprintf("Objective Function Value: %f\n\n", fval);
-                end 
-            end
-        end
-        
         function f = objfun(obj, success_flag)
             if success_flag
-                switch obj.Objective
-                    case "FlightTime"
-                        f = -flightTime();
-                    case "Range"
-                        f = -obj.QR.Range();
-                end
+                f = objfun(obj.Objective, obj.QR);
             else
                 f = NaN;
-            end
-            
-            function ft = flightTime()
-                if obj.SimulationBased
-                    obj.QR.calcControllerGains;
-                    ft = obj.QR.flightTime(obj.ReferenceTrajectory,'SimulationBased',true, obj.SimulationOpts{:});
-                else
-                    ft = obj.QR.flightTime('SimulationBased',false);
-                end
             end
             % implement objective function scaling at some point
         end
@@ -737,12 +585,12 @@ classdef Optimization < handle
             % Processes objective function value and returns desired value
             % Implement objective function scaling at some point
             % Make sure this stays vectorizable
-            switch obj.Objective
-                case "FlightTime"
-                    F = -f;
-                case "Range"
-                    F = -f;
-            end
+            F = processF(obj.Objective, f);
+        end
+        
+        function F = FVal(obj)
+            % Directly get current objective function value
+            F = processF(obj, objfun(obj, true));
         end
         
         function [c,ceq] = nlcon(obj, success_flag)
@@ -753,13 +601,13 @@ classdef Optimization < handle
             end
             
             % Boundary Constraints
-            batt = obj.QR.Battery;
+            batt = obj.QR.PT.Battery;
             c_batt = distToBoundary(batt.Fit.Boundary, [batt.Fit.Inputs.Value]');
             
-            prop = obj.QR.Propeller;
+            prop = obj.QR.PT.Propeller;
             c_prop = distToBoundary(prop.Fit.Boundary, [prop.Fit.Inputs.Value]');
             
-            motor = obj.QR.Motor;
+            motor = obj.QR.PT.Motor;
             c_motor = distToBoundary(motor.Fit.Boundary, [motor.Fit.Inputs.Value]');
             
             c = [c_batt; c_prop; c_motor; c_input];
@@ -775,6 +623,12 @@ classdef Optimization < handle
                 obj.X_prev = X;
             end
             
+            obj.QR.update();
+        end
+        
+        function resetQR(obj)
+            restoreDependentDefault(obj.DependentParams);
+            loadValues(obj.QR.Params, obj.X0Params);
             obj.QR.update();
         end
     end

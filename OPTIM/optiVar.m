@@ -111,7 +111,15 @@ classdef optiVar < handle
             for i = 1:numel(val)
                 obj(j(i)).Value = val(i);
             end
-        end     
+        end
+        
+        function reset(obj_array)
+            for i = 1:numel(obj_array)
+                obj = obj_array(i);
+                obj.Value = obj.x0;
+                obj.Enabled = obj.EnabledDefault;
+            end
+        end
         
         function [pcs,pc] = percentChange(obj, val)
             if nargin == 1
@@ -172,14 +180,6 @@ classdef optiVar < handle
         function v = linspace(obj, n)
             v = linspace(obj.lb, obj.ub, n);
         end
-        
-        function reset(obj_array)
-           for i = 1:numel(obj_array)
-               obj = obj_array(i);
-               obj.Value = obj.x0;
-               obj.Enabled = obj.EnabledDefault;
-           end
-        end
          
         function s = parentTypes(obj_array) 
             s = string.empty(numel(obj_array), 0);
@@ -191,15 +191,29 @@ classdef optiVar < handle
     end
     
     methods (Hidden)
-        function dispAll(obj_array)
+        function tbl = dispTable(obj_array, child_fields, optim_fields, opts)
+            arguments
+                obj_array
+                child_fields string = ["Sym", "Value", "Unit", "Description", "Parent"]
+                optim_fields string = ["x0", "lb", "ub", "percentChange", "Enabled", "Scaled", "scaleFactor"]
+                opts.ChildOpts cell = {}
+            end
             % Modifies method from Mixin.Custom Display
             childs = vertcat(obj_array.Child);
-            tbl = table(vertcat(childs.Sym), vertcat(childs.Value), vertcat(childs.Unit),...
-                vertcat(obj_array.x0), vertcat(obj_array.lb), vertcat(obj_array.ub), percentChange(obj_array),...
-                vertcat(obj_array.Enabled), vertcat(obj_array.Scaled), vertcat(obj_array.scaleFactor),...
-                vertcat(childs.Description), vertcat(vertcat(childs.Parent).Name),...
-                'VariableNames', ["Sym", "Value", "Unit","X0", "LB", "UB","% Change", "Enabled", "Scaled", "Scale Factor", "Description", "Parent"]);
-            disp(tbl);
+            tbl = dispTable(childs, child_fields, opts.ChildOpts{:});
+            for i = 1:numel(optim_fields)
+                field = optim_fields(i);
+                switch field
+                    case "percentChange"
+                        val = percentChange(obj_array);
+                    otherwise
+                        val = vertcat(obj_array.(field));
+                end
+                tbl.(optim_fields(i)) = val;
+            end
+            if nargout == 0
+                disp(tbl);
+            end
         end
     end
 end
