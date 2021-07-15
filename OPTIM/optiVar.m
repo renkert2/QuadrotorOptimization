@@ -140,12 +140,44 @@ classdef optiVar < handle
         end
         
         function o = get(obj, syms)
-            i = ismember([obj.Child.Sym], syms);
+            childs = [obj.Child];
+            child_syms = [childs.Sym];
+            i = ismember(child_syms, syms);
             o = obj(i);
         end
         
         function s = latex(obj_array, varargin)
             s = latex(vertcat(obj_array.Child), varargin{:});
+        end
+        
+        function tbl = dispTable(obj_array, child_fields, optim_fields, opts)
+            arguments
+                obj_array
+                child_fields string = ["Sym", "Value", "Unit", "Description", "Parent"]
+                optim_fields string = ["x0", "lb", "ub", "percentChange", "Enabled", "Scaled", "scaleFactor"]
+                opts.ChildOpts cell = {}
+            end
+            % Modifies method from Mixin.Custom Display
+            childs = vertcat(obj_array.Child);
+            tbl = dispTable(childs, child_fields, opts.ChildOpts{:});
+            for i = 1:numel(optim_fields)
+                field = optim_fields(i);
+                switch field
+                    case "percentChange"
+                        val = percentChange(obj_array);
+                    otherwise
+                        val = vertcat(obj_array.(field));
+                end
+                tbl.(optim_fields(i)) = val;
+            end
+            if nargout == 0
+                disp(tbl);
+            end
+        end
+        
+        function t = dispTableLatex(obj)
+            t = dispTable(obj, ["Sym", "Value", "Unit"], ["x0", "lb", "ub", "percentChange"], 'ChildOpts',{'LatexSym', true, 'LatexOpts',{'UnitFlag',false,'InlineArg',"$"}});
+            t.Properties.VariableNames = ["Variable", "$X^*$", "Unit", "$X_0$", "LB", "UB", "\% Change"];
         end
     end
     
@@ -171,6 +203,7 @@ classdef optiVar < handle
         
         function x_u = unscale(obj,x)
             if nargin > 1
+                x = x(:); % Assert x is a column vector
                 x_u = x.*scaleFactors(obj);
             elseif nargin == 1
                 x_u = filterEnabled(obj, 'Value').*scaleFactors(obj);
@@ -191,30 +224,7 @@ classdef optiVar < handle
     end
     
     methods (Hidden)
-        function tbl = dispTable(obj_array, child_fields, optim_fields, opts)
-            arguments
-                obj_array
-                child_fields string = ["Sym", "Value", "Unit", "Description", "Parent"]
-                optim_fields string = ["x0", "lb", "ub", "percentChange", "Enabled", "Scaled", "scaleFactor"]
-                opts.ChildOpts cell = {}
-            end
-            % Modifies method from Mixin.Custom Display
-            childs = vertcat(obj_array.Child);
-            tbl = dispTable(childs, child_fields, opts.ChildOpts{:});
-            for i = 1:numel(optim_fields)
-                field = optim_fields(i);
-                switch field
-                    case "percentChange"
-                        val = percentChange(obj_array);
-                    otherwise
-                        val = vertcat(obj_array.(field));
-                end
-                tbl.(optim_fields(i)) = val;
-            end
-            if nargout == 0
-                disp(tbl);
-            end
-        end
+        
     end
 end
 

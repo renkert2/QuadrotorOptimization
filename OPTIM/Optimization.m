@@ -62,6 +62,7 @@ classdef Optimization < handle
         function [OO] = Optimize(obj, opts)
             arguments
                 obj
+                opts.SolverFunction = "fmincon"
                 opts.OptimizationOpts cell = {}
                 opts.OptimizationOutput logical = true
                 opts.InitializeFromValue logical = false
@@ -73,46 +74,63 @@ classdef Optimization < handle
             if opts.Timer
                 timer = tic;
             end
-            
-            optimopts = optimoptions('fmincon', 'Algorithm', 'sqp');
-
-            if opts.OptimizationOutput
-                optimopts = optimoptions(optimopts, 'Display', 'iter-detailed', 'PlotFcn', {@optimplotx,@optimplotfval,@optimplotfirstorderopt});
-            end
-            optimopts = optimoptions(optimopts, opts.OptimizationOpts{:});
-            
-            if opts.InitializeFromValue
-                x0 = .75*scale(obj.OptiVars) + .25*X0(obj.OptiVars);
-            else
-                x0 = X0(obj.OptiVars);
-            end
-            
+                        
             setDependent(obj.DependentParams, true);
             obj.updateQR(false);
+            
+            optimopts = optimoptions(opts.SolverFunction);
+            switch opts.SolverFunction
+                case "fmincon"
+                    optimopts = optimoptions(optimopts, 'Algorithm', 'sqp');
+                    if opts.OptimizationOutput
+                        optimopts = optimoptions(optimopts, 'Display', 'iter-detailed', 'PlotFcn', {@optimplotx,@optimplotfval,@optimplotfirstorderopt});
+                    end
+                case "ga"
+                    optimopts = optimoptions(optimopts, 'UseVectorized', false);
+                    if opts.OptimizationOutput
+                        optimopts = optimoptions(optimopts, 'Display', 'iter', 'PlotFcn', {@gaplotbestf,@gaplotbestindiv});
+                    end
+            end
+            optimopts = optimoptions(optimopts, opts.OptimizationOpts{:});
             
             lb = LB(obj.OptiVars);
             ub = UB(obj.OptiVars);
             
             OO = OptimOutput();
             OO.Objective = obj.Objective;
-            OO.X0 = unscale(obj.OptiVars);
+            OO.SolverFunction = opts.SolverFunction;
+            
             OO.F0 = obj.processF(objfun(obj, true));
             qr_con_in_cache = obj.QR.PT.SimpleModel.ConstrainInput; % Save previous state of QR.ConstrainInput
             obj.QR.PT.SimpleModel.ConstrainInput = false; % Hand input constraint to optimization solver
             
-            [X_opt_s, f_opt, OO.exitflag, ~, OO.lambda, grad_s, hessian_s] = fmincon(@objfun_local ,x0, [], [], [], [], lb, ub, @nlcon_local, optimopts);
+            switch opts.SolverFunction
+                case "fmincon"
+                    if opts.InitializeFromValue
+                        x0 = .75*scale(obj.OptiVars) + .25*X0(obj.OptiVars);
+                    else
+                        x0 = X0(obj.OptiVars);
+                    end
+                    OO.X0 = unscale(obj.OptiVars);
+                    
+                    [X_opt_s, f_opt, OO.exitflag, ~, OO.lambda, grad_s, hessian_s] = fmincon(@objfun_local ,x0, [], [], [], [], lb, ub, @nlcon_local, optimopts);
+                    
+                    s = 1./vertcat(obj.OptiVars.scaleFactors);
+                    S = diag(s);
+                    OO.grad = S*grad_s; % Denominator Layout Notation
+                    OO.hessian = S*hessian_s*S;
+                    
+                    % Specify Descriptions for constraints
+                    lambda_desc = struct();
+                    lambda_desc.ineqnonlin = ["Battery", "Propeller", "Motor", "Input"]; % Hardcoded for now.  Would be good to have Constraint objects at some point
+                    OO.lambdaDesc = lambda_desc;
+                case "ga"
+                    nvars = sum([obj.OptiVars.Enabled]);
+                    [X_opt_s,f_opt,OO.exitflag,OO.output,OO.population,OO.scores] = ga(@objfun_local ,nvars,[],[],[],[],lb,ub,@nlcon_local,optimopts);
+            end
+            
             F_opt = obj.processF(f_opt); % Transform objective function output to desired output
             OO.F_opt = F_opt;
-            
-            s = 1./vertcat(obj.OptiVars.scaleFactors);
-            S = diag(s);
-            OO.grad = S*grad_s; % Denominator Layout Notation
-            OO.hessian = S*hessian_s*S;
-            
-            % Specify Descriptions for constraints
-            lambda_desc = struct();
-            lambda_desc.ineqnonlin = ["Battery", "Propeller", "Motor", "Input"]; % Hardcoded for now.  Would be good to have Constraint objects at some point
-            OO.lambdaDesc = lambda_desc;
                 
             obj.QR.PT.SimpleModel.ConstrainInput = qr_con_in_cache; 
          
@@ -168,10 +186,9 @@ classdef Optimization < handle
                 obj
                 vars
                 n double
-                opts.Objective = "FlightTime"
                 opts.ConstraintFunction = []
                 opts.ReverseSearch logical = false
-                opts.InitializeFromValue logical = true
+                opts.InitializeFromValue logical = false
             end
             
             N_vars = numel(vars);
@@ -187,39 +204,39 @@ classdef Optimization < handle
             
             obj.OptiVars.reset();
             % Obtain baseline optimal point
-            [~,F_opt] = Optimize(obj, opts.Objective, 'OptimizationOutput', false, 'OptimizationOpts', {'Display', 'none'});
+            [OO_opt] = Optimize(obj, 'OptimizationOutput', false, 'OptimizationOpts', {'Display', 'none'});
+            F_opt = OO_opt.F_opt;
             X_opt = vertcat(vars.Value);
             
             for i = 1:N_vars
-                % Each variable in the sweep is fixed at a point and is 
+                % Each variable in the sweep is fixed at a point and is
                 % no longer optimized
                 vars(i).Enabled = false;
             end
             
-           switch N_vars
-               case 1
-                   X = linspace(vars, n);
-                   if opts.ReverseSearch
-                       X = fliplr(X);
-                   end
-                   
-                   F = NaN(size(X));
-                   valid_cnt = 0;
-                   for i = 1:numel(X)
-                       vars.Value = X(i);
-                       [F(i), pd, dd, OO(i)] = optiWrapper();
-                       if ~isnan(F(i))
-                           valid_cnt = valid_cnt + 1;
-                           I(1,valid_cnt) = i;
-                           PD(1,valid_cnt) = pd;
-                           DD(1,valid_cnt) = dd;
-                           msg = sprintf("Point: %f F: %f", X(i), F(i));
-                       else
-                           msg = sprintf("Point: %f F: NaN", X(i));
-                       end
-                       disp(msg)
-                   end
-                   
+            switch N_vars
+                case 1
+                    X = linspace(vars, n);
+                    if opts.ReverseSearch
+                        X = fliplr(X);
+                    end
+                    
+                    F = NaN(size(X));
+                    valid_cnt = 0;
+                    for i = 1:numel(X)
+                        vars.Value = X(i);
+                        [OO(i)] = optiWrapper();
+                        F(i) = OO(i).F_opt;
+                        if ~isnan(F(i))
+                            valid_cnt = valid_cnt + 1;
+                            I(1,valid_cnt) = i;
+                            msg = sprintf("Point: %f F: %f", X(i), F(i));
+                        else
+                            msg = sprintf("Point: %f F: NaN", X(i));
+                        end
+                        disp(msg)
+                    end
+                    
                case 2
                    x = linspace(vars(1),n);
                    y = linspace(vars(2),n);
@@ -246,12 +263,11 @@ classdef Optimization < handle
                            if is_valid
                                vars(1).Value = x(i);
                                vars(2).Value = y(j);
-                               [F(j,i), pd, dd, OO(j,i)] = optiWrapper();
+                               [OO(j,i)] = optiWrapper();
+                               F(j,i) = OO(j,i).F_opt;
                                if ~isnan(F(j,i))
                                    valid_cnt = valid_cnt + 1;
                                    I(:,valid_cnt) = [j;i];
-                                   PD(1,valid_cnt) = pd;
-                                   DD(1,valid_cnt) = dd;
                                    msg = sprintf("Point: (%f, %f) F: %f", x(i), y(j), F(j,i));
                                else
                                    msg = sprintf("Point: (%f, %f) F: NaN", x(i), y(j));
@@ -275,24 +291,19 @@ classdef Optimization < handle
            so.X_opt = X_opt;
            so.F_opt = F_opt;
            so.I = I;
-           so.PD = PD;
-           so.DD = DD;
            so.OO = OO;
+           so.OO_opt = OO_opt;
            
            % Clean Up
            obj.OptiVars.reset();
            
-            function [F, pd, dd, oo] = optiWrapper()
+            function [oo] = optiWrapper()
                 try
-                    [~,F,oo] = Optimize(obj, opts.Objective, 'OptimizationOutput', false, 'OptimizationOpts', {'Display', 'none'}, 'InitializeFromValue',opts.InitializeFromValue);
-                    pd = oo.PerformanceData;
-                    dd = oo.DesignData;
+                    [oo] = Optimize(obj, 'OptimizationOutput', false, 'OptimizationOpts', {'Display', 'none'}, 'InitializeFromValue',opts.InitializeFromValue);
                 catch
-                    F = NaN;
                     oo = OptimOutput();
                     oo.exitflag = -4;
-                    pd = NaN;
-                    dd = NaN;
+                    oo.F_opt = NaN;
                 end
             end
         end
@@ -576,7 +587,7 @@ classdef Optimization < handle
             if success_flag
                 f = objfun(obj.Objective, obj.QR);
             else
-                f = NaN;
+                f = Inf;
             end
             % implement objective function scaling at some point
         end
@@ -597,7 +608,7 @@ classdef Optimization < handle
             if success_flag
                 c_input = obj.QR.SS_QAve.u - 1;
             else
-                c_input = NaN;
+                c_input = 1;
             end
             
             % Boundary Constraints

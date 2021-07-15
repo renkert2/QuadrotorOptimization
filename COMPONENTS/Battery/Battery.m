@@ -38,6 +38,7 @@ classdef Battery < Component
         V_OCV_averaged double
         Averaged_SOC double % SOC at which V_OCV(q) = V_OCV_Average
         OperatingCapacity double
+        ChargeTime double % Seconds
     end
     
     methods        
@@ -75,6 +76,14 @@ classdef Battery < Component
         
         function c = get.OperatingCapacity(obj)
             c = obj.Capacity.Value*range(obj.OperatingSOCRange);
+        end
+        
+        function t = get.ChargeTime(obj)
+            amp_hours = (obj.Q.Value / 1000);
+            charge_C = 1; % A/Ah
+            charge_current = charge_C*amp_hours;
+            t = amp_hours/charge_current;
+            t = t*3600; % hours to seconds
         end
     end
     

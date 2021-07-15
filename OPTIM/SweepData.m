@@ -7,15 +7,15 @@ classdef SweepData
         N_vars double % number of design variables
         
         X
-        F % Primary objective function value
+        F % Primary objective value
         
         X_opt
         F_opt
-        
+
         I
-        PD % Performance Data
-        DD % Design Data
         OO OptimOutput % Optimization Output
+        
+        OO_opt OptimOutput
     end
     
     methods
