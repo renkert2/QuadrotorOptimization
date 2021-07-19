@@ -4,8 +4,8 @@ classdef Optimization < handle
         OptiVars (:,1) optiVar
         DependentParams (:,1) compParam
         
-        Objective OptimObjectives = "FlightTime" 
-        
+        Objective OptiFunctions.Parents.Function = OptiFunctions.FlightTime();
+        Constraints OptiFunctions.Parents.Function = [OptiFunctions.BatteryBoundary; OptiFunctions.MotorBoundary; OptiFunctions.PropellerBoundary; OptiFunctions.InputConstraint]        
         CD ComponentData % ComponentDatabase 
     end
     
@@ -26,6 +26,7 @@ classdef Optimization < handle
             obj.QR = qr;
             obj.X0Params = getValues(qr.Params);
             obj.CD = cd;
+
             obj.init();
         end
         
@@ -97,10 +98,10 @@ classdef Optimization < handle
             ub = UB(obj.OptiVars);
             
             OO = OptimOutput();
-            OO.Objective = obj.Objective;
+            OO.Objective = class(obj.Objective);
             OO.SolverFunction = opts.SolverFunction;
             
-            OO.F0 = obj.processF(objfun(obj, true));
+            OO.F0 = obj.Objective.Value(obj.QR);
             qr_con_in_cache = obj.QR.PT.SimpleModel.ConstrainInput; % Save previous state of QR.ConstrainInput
             obj.QR.PT.SimpleModel.ConstrainInput = false; % Hand input constraint to optimization solver
             
@@ -129,7 +130,7 @@ classdef Optimization < handle
                     [X_opt_s,f_opt,OO.exitflag,OO.output,OO.population,OO.scores] = ga(@objfun_local ,nvars,[],[],[],[],lb,ub,@nlcon_local,optimopts);
             end
             
-            F_opt = obj.processF(f_opt); % Transform objective function output to desired output
+            F_opt = obj.Objective.f2val(f_opt); % Transform objective function output to desired output
             OO.F_opt = F_opt;
                 
             obj.QR.PT.SimpleModel.ConstrainInput = qr_con_in_cache; 
@@ -165,9 +166,9 @@ classdef Optimization < handle
                 setVals(obj.OptiVars, X_s);
                 try
                     obj.updateQR(opts.CheckPrevious);
-                    [c,ceq] = nlcon(obj, true);
+                    [c,ceq] = nlcon(obj);
                 catch
-                    [c,ceq] = nlcon(obj, false);
+                    [c,ceq] = nlcon(obj);
                 end
             end
         end
@@ -300,6 +301,30 @@ classdef Optimization < handle
             function [oo] = optiWrapper()
                 try
                     [oo] = Optimize(obj, 'OptimizationOutput', false, 'OptimizationOpts', {'Display', 'none'}, 'InitializeFromValue',opts.InitializeFromValue);
+                catch
+                    oo = OptimOutput();
+                    oo.exitflag = -4;
+                    oo.F_opt = NaN;
+                end
+            end
+        end
+        
+        function [oo,range] = EpsilonConstraint(obj, constraint, property, range)
+            con_cache = obj.Constraints;
+            obj.Constraints = [obj.Constraints; constraint];
+            
+            N = numel(range);
+            oo = OptimOutput.empty(N,0);
+            for i = 1:N
+                constraint.(property) = range(i);
+                oo(i) = optiWrapper();
+                disp(oo(i));
+            end
+            obj.Constraints = con_cache;
+            
+            function [oo] = optiWrapper()
+                try
+                    [oo] = Optimize(obj, 'InitializeFromValue', true, 'OptimizationOutput', false, 'OptimizationOpts', {'Display', 'none'});
                 catch
                     oo = OptimOutput();
                     oo.exitflag = -4;
@@ -583,45 +608,17 @@ classdef Optimization < handle
             end
         end
 
-        function f = objfun(obj, success_flag)
+        function f_ = objfun(obj, success_flag)
             if success_flag
-                f = objfun(obj.Objective, obj.QR);
+                f_ = f(obj.Objective, obj.QR);
             else
-                f = Inf;
+                f_ = Inf;
             end
             % implement objective function scaling at some point
         end
-        
-        function F = processF(obj,f)
-            % Processes objective function value and returns desired value
-            % Implement objective function scaling at some point
-            % Make sure this stays vectorizable
-            F = processF(obj.Objective, f);
-        end
-        
-        function F = FVal(obj)
-            % Directly get current objective function value
-            F = processF(obj, objfun(obj, true));
-        end
-        
-        function [c,ceq] = nlcon(obj, success_flag)
-            if success_flag
-                c_input = obj.QR.SS_QAve.u - 1;
-            else
-                c_input = 1;
-            end
-            
-            % Boundary Constraints
-            batt = obj.QR.PT.Battery;
-            c_batt = distToBoundary(batt.Fit.Boundary, [batt.Fit.Inputs.Value]');
-            
-            prop = obj.QR.PT.Propeller;
-            c_prop = distToBoundary(prop.Fit.Boundary, [prop.Fit.Inputs.Value]');
-            
-            motor = obj.QR.PT.Motor;
-            c_motor = distToBoundary(motor.Fit.Boundary, [motor.Fit.Inputs.Value]');
-            
-            c = [c_batt; c_prop; c_motor; c_input];
+
+        function [c,ceq] = nlcon(obj)
+            c = g(obj.Constraints, obj.QR);
             ceq = [];
         end
         

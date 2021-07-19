@@ -4,7 +4,7 @@ classdef OptimOutput
     
     properties
         OptimTime duration % Time required to complete optimization
-        Objective OptimObjectives
+        Objective
         SolverFunction
         ParamVals (:,1) compParamValue
         
