@@ -206,7 +206,7 @@ classdef optiVar < handle
                 x = x(:); % Assert x is a column vector
                 x_u = x.*scaleFactors(obj);
             elseif nargin == 1
-                x_u = filterEnabled(obj, 'Value').*scaleFactors(obj);
+                x_u = filterEnabled(obj, 'Value');
             end
         end
         

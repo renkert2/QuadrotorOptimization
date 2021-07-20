@@ -67,7 +67,7 @@ classdef Optimization < handle
                 opts.OptimizationOpts cell = {}
                 opts.OptimizationOutput logical = true
                 opts.InitializeFromValue logical = false
-                opts.CaptureState logical = true
+                opts.CaptureState logical = false
                 opts.CheckPrevious logical = true
                 opts.Timer logical = true
             end
@@ -171,6 +171,48 @@ classdef Optimization < handle
                     [c,ceq] = nlcon(obj);
                 end
             end
+        end
+        
+        function [grad, grad_s] = fdiff(obj, opts)
+            arguments
+                obj
+                opts.Function = obj.Objective
+                opts.Vars = obj.OptiVars(isEnabled(obj.OptiVars))
+                opts.FiniteDifferenceStepSize = sqrt(eps)                
+            end
+            
+            vars = opts.Vars;
+            v = opts.FiniteDifferenceStepSize;
+            F = opts.Function;
+            
+            param_cache = getValues(obj.QR.Params);
+            dep_cache = setDependent(obj.DependentParams, true); % Need to use surrogate models for this
+            
+            x = vertcat(vars.Value);
+            obj.updateQR(false);
+            f = F.Value(obj.QR);
+            
+            typical_x = vertcat(vars.x0);
+            delta = v.*sign(x).*max(abs(x),typical_x);
+            
+            N = numel(vars);
+            grad = zeros(N,1);
+            for i = 1:N
+                var = vars(i);
+                val_cache = var.Value;
+                
+                var.Value = var.Value + delta(i);
+                obj.updateQR(false);
+                f_step = F.Value(obj.QR);
+                grad(i) = (f_step - f)/delta(i);
+                
+                var.Value = val_cache;
+            end
+            grad_s = x.*grad;
+            
+            % Cleanup
+            setDependent(obj.DependentParams, dep_cache);
+            loadValues(obj.QR.Params, param_cache);
         end
         
         function so = sweep(obj, vars, n, opts)
