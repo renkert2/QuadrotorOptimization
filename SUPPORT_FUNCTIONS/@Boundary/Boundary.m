@@ -90,8 +90,8 @@ classdef Boundary
             x2_vals = linspace(obj.X_lb(2), obj.X_ub(2), res);
         end
         
-        function plot(obj, x1, x2)
-            scatter(obj.Data(:,1), obj.Data(:,2))
+        function p = plot(obj, x1, x2)
+            scatter(obj.Data(:,1), obj.Data(:,2));
             hold on
             plot(obj.BoundaryPoints(:,1), obj.BoundaryPoints(:,2))
             hold off
@@ -111,6 +111,8 @@ classdef Boundary
             title("Boundary")
             xlabel('X_1')
             ylabel('X_2')
+            
+            p = gca;
         end
     end
     

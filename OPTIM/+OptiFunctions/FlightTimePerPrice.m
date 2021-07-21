@@ -4,7 +4,7 @@ classdef FlightTimePerPrice < OptiFunctions.Parents.Function
             obj.Sym = "ft/P";
             obj.Unit = "s/$";
         end
-        function v = Value(obj)
+        function v = Value(obj, QR)
             v = QR.FlightTime./QR.Price.Value;
         end
         function f = val2f(obj, v)

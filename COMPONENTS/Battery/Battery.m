@@ -30,13 +30,13 @@ classdef Battery < Component
     
     properties (SetAccess = private)
         Nominal_SOC double = 1 % SOC at which V_OCV(q) = V_OCV_nominal
+        Averaged_SOC double % SOC at which V_OCV(q) = V_OCV_Average
         
         Fit paramFit
     end
     
     properties (Dependent)
         V_OCV_averaged double
-        Averaged_SOC double % SOC at which V_OCV(q) = V_OCV_Average
         OperatingCapacity double
         ChargeTime double % Seconds
     end
@@ -56,7 +56,12 @@ classdef Battery < Component
             obj.Nominal_SOC = nq(1);
         end
         
-        function q = get.Averaged_SOC(obj)
+        function set.OperatingSOCRange(obj,val)
+            obj.OperatingSOCRange = val;
+            calcAveraged_SOC(obj);
+        end
+        
+        function q = calcAveraged_SOC(obj)
             % SOC at which V_OCV(q) = V_OCV_Average, average taken over
             % operating range
             if obj.variableV_OCV
@@ -68,6 +73,7 @@ classdef Battery < Component
             else
                 q = 1;
             end
+            obj.Averaged_SOC = q;
         end
         
         function v = get.V_OCV_averaged(obj)
@@ -116,6 +122,8 @@ classdef Battery < Component
             
             V_pack_sym = obj.N_s.*obj.V_OCV_nominal.*obj.V_OCV_curve;
             obj.V_OCV_pack = matlabFunction([obj.N_s], V_pack_sym, {sym('q')});
+            
+            calcAveraged_SOC(obj);
         end
     end
     

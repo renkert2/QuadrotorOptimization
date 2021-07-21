@@ -67,6 +67,7 @@ classdef Optimization < handle
                 opts.OptimizationOpts cell = {}
                 opts.OptimizationOutput logical = true
                 opts.InitializeFromValue logical = false
+                opts.InitWeights (1,2) double = [1 0]
                 opts.CaptureState logical = false
                 opts.CheckPrevious logical = true
                 opts.Timer logical = true
@@ -84,7 +85,7 @@ classdef Optimization < handle
                 case "fmincon"
                     optimopts = optimoptions(optimopts, 'Algorithm', 'sqp');
                     if opts.OptimizationOutput
-                        optimopts = optimoptions(optimopts, 'Display', 'iter-detailed', 'PlotFcn', {@optimplotx,@optimplotfval,@optimplotfirstorderopt});
+                        optimopts = optimoptions(optimopts, 'Display', 'iter-detailed', 'PlotFcn', {@optimplotfval,@optimplotfirstorderopt}, 'OutputFcn', {@plotFcnBoundary, @plotFcnGradient});
                     end
                 case "ga"
                     optimopts = optimoptions(optimopts, 'UseVectorized', false);
@@ -108,7 +109,9 @@ classdef Optimization < handle
             switch opts.SolverFunction
                 case "fmincon"
                     if opts.InitializeFromValue
-                        x0 = .75*scale(obj.OptiVars) + .25*X0(obj.OptiVars);
+                        init_weights = opts.InitWeights;
+                        init_weights = init_weights/norm(init_weights);
+                        x0 = init_weights(1)*scale(obj.OptiVars) + init_weights(2)*X0(obj.OptiVars);
                     else
                         x0 = X0(obj.OptiVars);
                     end
@@ -171,14 +174,65 @@ classdef Optimization < handle
                     [c,ceq] = nlcon(obj);
                 end
             end
+            
+            function stop = plotFcnBoundary(~,~,state)
+                persistent d 
+                stop = false;
+                
+                switch state
+                    case 'init'
+                        % Setup for plots or guis
+                        f = figure;
+                        d = DesignSpacePlot(obj.QR,f);
+                    case 'iter'
+                        % Make updates to plot or guis as needed
+                        d.update();
+                    case 'done'
+                        
+                end
+            end
+            
+            function stop = plotFcnGradient(~,optimValues,state)
+                persistent gradplot vars N
+                stop = false;
+                vars = obj.OptiVars(isEnabled(obj.OptiVars));
+                N = numel(vars);
+                switch state
+                    case 'init'
+                        % Setup for plots or guis
+                        f = figure;
+                        t = tiledlayout(f,N,1);
+                        gradplot = gobjects(N,1);
+                        co = colororder;
+                        for i = 1:N
+                            nexttile(t,i);
+                            color = co(i,:);
+                            gradplot(i) = animatedline('Color',color, 'DisplayName', 'Scaled Gradient');
+                            legend
+                            ylabel(vars(i).latex(), 'Interpreter', 'latex');
+                            if i == N
+                                xlabel("Iteration");
+                            end
+                        end
+                    case 'iter'
+                        scaled_grad = optimValues.gradient;
+                        for i=1:N
+                            addpoints(gradplot(i), optimValues.iteration, scaled_grad(i));
+                        end
+                        drawnow
+                    case 'done'
+                        
+                end
+            end
         end
         
-        function [grad, grad_s] = fdiff(obj, opts)
+        function [grad, grad_s, hess, hess_s] = fdiff(obj, opts)
             arguments
                 obj
                 opts.Function = obj.Objective
                 opts.Vars = obj.OptiVars(isEnabled(obj.OptiVars))
-                opts.FiniteDifferenceStepSize = sqrt(eps)                
+                opts.FiniteDifferenceStepSize = sqrt(eps)
+                opts.HessianStepFactor = 3
             end
             
             vars = opts.Vars;
@@ -188,33 +242,63 @@ classdef Optimization < handle
             param_cache = getValues(obj.QR.Params);
             dep_cache = setDependent(obj.DependentParams, true); % Need to use surrogate models for this
             
-            x = vertcat(vars.Value);
             obj.updateQR(false);
-            f = F.Value(obj.QR);
-            
-            typical_x = vertcat(vars.x0);
-            delta = v.*sign(x).*max(abs(x),typical_x);
+            x = vertcat(vars.Value);
             
             N = numel(vars);
-            grad = zeros(N,1);
-            for i = 1:N
-                var = vars(i);
-                val_cache = var.Value;
-                
-                var.Value = var.Value + delta(i);
-                obj.updateQR(false);
-                f_step = F.Value(obj.QR);
-                grad(i) = (f_step - f)/delta(i);
-                
-                var.Value = val_cache;
+            
+            % Calculate Gradient
+            [grad, grad_s] = calcGradient();
+            
+            % Calculate Hessian
+            if nargout > 2
+                [hess, hess_s] = calcHessian(grad);
             end
-            grad_s = x.*grad;
             
             % Cleanup
             setDependent(obj.DependentParams, dep_cache);
             loadValues(obj.QR.Params, param_cache);
+            
+            function [grad, grad_s] = calcGradient()             
+                delta = v.*x;
+                f = F.f(obj.QR);
+                grad = zeros(N,1);
+                for i = 1:N
+                    var = vars(i);
+                    val_cache = var.Value;
+                    
+                    var.Value = var.Value + delta(i);
+                    obj.updateQR(false);
+                    
+                    f_step = F.f(obj.QR);
+                    grad(i) = (f_step - f)/delta(i);
+                    
+                    var.Value = val_cache;
+                end
+                grad_s = x.*grad;
+            end
+            
+            function [hess, hess_s] = calcHessian(grad)
+                delta = (v.^(1/opts.HessianStepFactor)).*x;
+                g = grad;
+                hess = zeros(N,N);
+                for j = 1:N % Each column of the Hessian
+                    var = vars(j);
+                    val_cache = var.Value;
+                    
+                    var.Value = var.Value + delta(j);
+                    obj.updateQR(false);
+                    
+                    g_step = calcGradient();
+                    hess(:,j) = (g_step - g)/delta(j);
+                    
+                    var.Value = val_cache;
+                end
+                hess = (hess + hess.')/2; % Transform to symmetric
+                hess_s = diag(x)*hess*diag(x);
+            end
         end
-        
+            
         function so = sweep(obj, vars, n, opts)
             % X is the vector of design variable values being swept across.
             % - 1xn for 1 design var and nxnx2 meshgrid for 2 design vars
