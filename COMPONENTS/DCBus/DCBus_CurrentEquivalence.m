@@ -6,7 +6,7 @@ classdef DCBus_CurrentEquivalence < Component
         N_outputs double {mustBeInteger} = 1
         
         L {mustBeParam} = 0
-        R {mustBeParam} = 0
+        R compParam = compParam("R", 0, 'Unit', 'Ohm')
         C {mustBeParam} = 0
     end
     
@@ -56,7 +56,7 @@ classdef DCBus_CurrentEquivalence < Component
                 
                 E(E_cumsum(3)+i) = GraphEdge_Internal(...
                     'PowerFlow',PF(2),...
-                    'Coefficient',obj.R,...
+                    'Coefficient',pop(obj.R),...
                     'TailVertex',V(V_cumsum(2)+i),...
                     'HeadVertex',V(V_cumsum(4)+1));
                 

@@ -3,21 +3,41 @@ classdef OptimOutput
     %   Detailed explanation goes here
     
     properties
-        Objective OptimObjectives
+        OptimTime duration % Time required to complete optimization
+        Objective
+        SolverFunction
+        ParamVals (:,1) compParamValue
         
+        X0
+        F0
         X_opt
         F_opt
         
         exitflag
+        
+        %fmincon outputs
         lambda
+        lambdaDesc % Descriptions matching form of lambda struct
         grad
         hessian
+        
+        %ga outputs
+        output
+        population
+        scores
         
         PerformanceData 
         DesignData
     end
     
+    properties (Dependent)
+        PercentChange
+    end
+    
     methods
+        function p = get.PercentChange(obj)
+            p = (obj.F_opt - obj.F0)./obj.F0;
+        end
         function s = lambdaData(obj_array)
             N = numel(obj_array);
             l = [obj_array.lambda];

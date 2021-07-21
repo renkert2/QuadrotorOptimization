@@ -2,18 +2,21 @@ classdef PMSMInverter < Component
     properties
         InverterType InverterTypes = InverterTypes.VoltageDependent
         
-        rated_current {mustBeParam} = 20; %Rated Current - Amps
-        nominal_voltage {mustBeParam} = 14.8; %Nominal (average) voltage - Volts
-        eta {mustBeParam} = 0.85; % Efficiency
+        I_max {mustBeParam} = 20; %Rated Current - Amps
+%         nominal_voltage {mustBeParam} = 14.8; %Nominal (average) voltage - Volts
+%         eta {mustBeParam} = 0.85; % Efficiency
         
         L {mustBeParam} = 0;
         C {mustBeParam} = 0;
-        R_1 {mustBeParam} = 0.01;
+        R_1 compParam = compParam("R", 0.01, 'Unit', 'Ohm');
         R_2 {mustBeParam} = 0;
+        
+        Mass extrinsicProp = extrinsicProp('Mass', 0.03, 'Unit', "kg");
+        Price extrinsicProp = extrinsicProp('Price', NaN, 'Unit', "USD");
     end
     
     methods
-        function r = setResistance(obj, rated_current, nominal_voltage, eta)
+        function r = setResistance(obj, I_max, nominal_voltage, eta)
             % Placeholder - would like to calculate R_1 and R_2 given rated values and efficiency here
         end
     end
@@ -38,7 +41,7 @@ classdef PMSMInverter < Component
             desc = ["DC Inductance", "q Capacitance"];
             type = [VertexTypes.Current, VertexTypes.Voltage];
             cap = C(1);
-            coeff = [obj.L, obj.C];
+            coeff = [1*obj.L, 1*obj.C];
             init = 0;
             for i = 1:2
                 V(i) = GraphVertex_Internal('Description',desc(i),'Capacitance',cap,'Coefficient',coeff(i),'Initial',init, 'VertexType', type(i));
@@ -62,13 +65,13 @@ classdef PMSMInverter < Component
             
             if obj.InverterType == InverterTypes.ConstantLoss
                 P(4) = Type_PowerFlow("xt");
-                E(4) = GraphEdge_Internal('PowerFlow',[P(3) P(4)],'Coefficient',[obj.R_1 obj.R_2],'TailVertex',V(1),'HeadVertex',V(5));
+                E(4) = GraphEdge_Internal('PowerFlow',[P(3) P(4)],'Coefficient',[1*obj.R_1 1*obj.R_2],'TailVertex',V(1),'HeadVertex',V(5));
             elseif obj.InverterType == InverterTypes.VoltageDependent
                 P(4) = Type_PowerFlow("u1*xt");
-                E(4) = GraphEdge_Internal('PowerFlow',[P(3) P(4)],'Coefficient',[obj.R_1 obj.R_2],'TailVertex',V(1),'HeadVertex',V(5), 'Input', I(1));
+                E(4) = GraphEdge_Internal('PowerFlow',[P(3) P(4)],'Coefficient',[1*obj.R_1 1*obj.R_2],'TailVertex',V(1),'HeadVertex',V(5), 'Input', I(1));
             elseif obj.InverterType == InverterTypes.CurrentDependent
                 P(4) = Type_PowerFlow("(1/u1)*xt^2");
-                E(4) = GraphEdge_Internal('PowerFlow',[P(3) P(4)],'Coefficient',[obj.R_1 obj.R_2],'TailVertex',V(1),'HeadVertex',V(5), 'Input', I(1)); 
+                E(4) = GraphEdge_Internal('PowerFlow',[P(3) P(4)],'Coefficient',[1*obj.R_1 1*obj.R_2],'TailVertex',V(1),'HeadVertex',V(5), 'Input', I(1)); 
             else
                 error('Invalid InverterType')
             end

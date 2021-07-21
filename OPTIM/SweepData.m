@@ -7,15 +7,15 @@ classdef SweepData
         N_vars double % number of design variables
         
         X
-        F % Primary objective function value
+        F % Primary objective value
         
         X_opt
         F_opt
-        
+
         I
-        PD % Performance Data
-        DD % Design Data
         OO OptimOutput % Optimization Output
+        
+        OO_opt OptimOutput
     end
     
     methods
@@ -54,21 +54,30 @@ classdef SweepData
             
             hold on
             % NaN Highlighting
-            p1 = highlightGroups([isnan(y)], 'k');
-            set(p1, 'DisplayName', 'Infeasible Areas');
+             p1 = highlightGroups([isnan(y)], 'k');
+             set(p1, 'DisplayName', 'Infeasible Areas');
             
             % Constraint Highlighting
+            % Update later with OO.lamdaDesc
+            
             s = lambdaData(obj.OO);
             active = s.ineqnonlin > 0;
-            p2 = highlightGroups(active(1,:),'b');
-            set(p2, 'DisplayName', 'Propeller Constraint');
             
-            p3 = highlightGroups(active(2,:),'r');
-            set(p3, 'DisplayName', 'Motor Constraint');
+            p2 = highlightGroups(active(1,:),'m');
+            set(p2, 'DisplayName', 'Battery Constraint');
+            
+            p3 = highlightGroups(active(2,:),'b');
+            set(p3, 'DisplayName', 'Propeller Constraint');
+            
+            p4 = highlightGroups(active(3,:),'r');
+            set(p4, 'DisplayName', 'Motor Constraint');
+            
+            p5 = highlightGroups(active(4,:),'g');
+            set(p5, 'DisplayName', 'Input Constraint');
             
             hold off
             
-            p = [p1; p2; p3];
+            p = [p1; p2; p3; p4; p5];
             
             function p = highlightGroups(index, color)
                 index(end) = false;

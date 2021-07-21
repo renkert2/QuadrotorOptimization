@@ -5,7 +5,7 @@ classdef PerformanceData
         FlightTime double
         Range double
         ThrustRatio double
-        SteadyState QRState
+        SteadyState PowerTrainState
     end
 end
 
