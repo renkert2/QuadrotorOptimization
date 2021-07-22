@@ -59,7 +59,185 @@ classdef Optimization < handle
                 prop.Price;];
             storeDependentDefault(obj.DependentParams);
         end
+        
+        function f_ = objfun(obj, success_flag)
+            if success_flag
+                f_ = f(getEnabled(obj.Objective), obj.QR);
+            else
+                f_ = Inf;
+            end
+            % implement objective function scaling at some point
+        end
 
+        function [c,ceq] = nlcon(obj)
+            c = g(getEnabled(obj.Constraints), obj.QR);
+            ceq = [];
+        end
+        
+        function updateQR(obj, check_prev)
+            if check_prev
+                X = [obj.OptiVars.Value];
+                if ~isempty(obj.X_prev) && all(X == obj.X_prev)
+                    return % Only update variables if the design variables have changed value
+                end
+                obj.X_prev = X;
+            end
+            
+            obj.QR.update();
+        end
+        
+        function resetQR(obj)
+            restoreDependentDefault(obj.DependentParams);
+            loadValues(obj.QR.Params, obj.X0Params);
+            obj.QR.update();
+        end
+        
+        function so = sweep(obj, vars, n, opts)
+            % X is the vector of design variable values being swept across.
+            % - 1xn for 1 design var and nxnx2 meshgrid for 2 design vars
+            % ft is a vector or grid of flight times
+            % X_opt is the optimal design point, f_opt is the optimal
+            % flight time
+            % I are the indices 1xv or (i;j)xv corresponding to points where a
+            % valid flight time was obtained. PD and DD are 1xv vectors of 
+            % PerformanceData and DesignData objects evaluated at the valid
+            % points
+            arguments
+                obj
+                vars
+                n double
+                opts.OptimalPoint OptimOutput = OptimOutput.empty()
+                opts.VariableConstraints = [] % Nonlinear constraints depending directly on vars 
+                opts.ReverseSearch logical = false
+                opts.InitializeFromValue logical = true
+                opts.InitWeights (1,2) double = [.75 .25] % Bias a bit toward default x_0
+                opts.CaptureState logical = true
+            end
+            
+            N_vars = numel(vars);
+            assert(N_vars <=2 && N_vars ~= 0, "Choose 1 or 2 optimization variables for sweep")
+            if ~isa(vars, 'optiVar')
+                try
+                    vars = string(vars);
+                    vars = obj.OptiVars.get(vars);
+                catch
+                    error('vars argument must be optiVar objects or convertable to strings');
+                end
+            end
+            
+            obj.OptiVars.reset();
+            
+            if isempty(opts.OptimalPoint)
+                % Obtain baseline optimal point
+                [OO_opt] = Optimize(obj, 'OptimizationOutput', false, 'OptimizationOpts', {'Display', 'none'});
+            else
+                OO_opt = opts.OptimalPoint;
+            end
+            F_opt = OO_opt.F_opt;
+            X_opt = vertcat(vars.Value);
+
+            for i = 1:N_vars
+                % Each variable in the sweep is fixed at a point and is
+                % no longer optimized
+                vars(i).Enabled = false;
+            end
+            
+            switch N_vars
+                case 1
+                    X = linspace(vars, n);
+                    if opts.ReverseSearch
+                        X = fliplr(X);
+                    end
+                    
+                    F = NaN(size(X));
+                    valid_cnt = 0;
+                    for i = 1:numel(X)
+                        vars.Value = X(i);
+                        [OO(i)] = optiWrapper();
+                        F(i) = OO(i).F_opt;
+                        if ~isnan(F(i))
+                            valid_cnt = valid_cnt + 1;
+                            I(1,valid_cnt) = i;
+                            msg = sprintf("Point: %f F: %f", X(i), F(i));
+                        else
+                            msg = sprintf("Point: %f F: NaN", X(i));
+                        end
+                        disp(msg)
+                    end
+                    
+               case 2
+                   x = linspace(vars(1),n);
+                   y = linspace(vars(2),n);
+                   if opts.ReverseSearch
+                       x = fliplr(x);
+                       y = fliplr(y);
+                   end
+                   if ~isempty(opts.VariableConstraints)
+                       const_fun_flag = true;
+                   else
+                       const_fun_flag = false;
+                   end
+         
+                   F = NaN(numel(y), numel(x));
+                   valid_cnt = 0;
+                   for i = 1:numel(x)
+                       for j = 1:numel(y)
+                           vars(1).Value = x(i);
+                           vars(2).Value = y(j);
+                           
+                           if const_fun_flag
+                               is_valid = all(g(opts.VariableConstraints, obj.QR)<=0);
+                           else
+                               is_valid = true;
+                           end
+                           
+                           if is_valid
+                               [OO(j,i)] = optiWrapper();
+                               F(j,i) = OO(j,i).F_opt;
+                               if ~isnan(F(j,i))
+                                   valid_cnt = valid_cnt + 1;
+                                   I(:,valid_cnt) = [j;i];
+                                   msg = sprintf("Point: (%f, %f) F: %f", x(i), y(j), F(j,i));
+                               else
+                                   msg = sprintf("Point: (%f, %f) F: NaN", x(i), y(j));
+                               end
+                           else
+                               F(j,i) = NaN;
+                               msg = sprintf("Point: (%f, %f) F: Invalid Point", x(i), y(j));
+                           end
+                           disp(msg)
+                       end
+                   end
+                   [X(:,:,1), X(:,:,2)] = meshgrid(x,y);
+           end
+           
+           % Export Sweep Object
+           so = SweepData();
+           so.Vars = vars;
+           so.N_vars = N_vars;
+           so.X = X;
+           so.F = F;
+           so.X_opt = X_opt;
+           so.F_opt = F_opt;
+           so.I = I;
+           so.OO = OO;
+           so.OO_opt = OO_opt;
+           
+           % Clean Up
+           obj.OptiVars.reset();
+           
+            function [oo] = optiWrapper()
+                try
+                    [oo] = Optimize(obj, 'OptimizationOutput', false, 'OptimizationOpts', {'Display', 'none'}, 'InitializeFromValue',opts.InitializeFromValue, 'InitWeights', opts.InitWeights, 'CaptureState', opts.CaptureState);
+                catch
+                    oo = OptimOutput();
+                    oo.exitflag = -4;
+                    oo.F_opt = NaN;
+                end
+            end
+        end
+
+        %% Continuous Optimization
         function [OO] = Optimize(obj, opts)
             arguments
                 obj
@@ -68,7 +246,7 @@ classdef Optimization < handle
                 opts.OptimizationOutput logical = true
                 opts.InitializeFromValue logical = false
                 opts.InitWeights (1,2) double = [1 0]
-                opts.CaptureState logical = false
+                opts.CaptureState logical = true
                 opts.CheckPrevious logical = true
                 opts.Timer logical = true
             end
@@ -126,7 +304,7 @@ classdef Optimization < handle
                     
                     % Specify Descriptions for constraints
                     lambda_desc = struct();
-                    lambda_desc.ineqnonlin = ["Battery", "Propeller", "Motor", "Input"]; % Hardcoded for now.  Would be good to have Constraint objects at some point
+                    lambda_desc.ineqnonlin = arrayfun(@(x) x.Sym, getEnabled(obj.Constraints));
                     OO.lambdaDesc = lambda_desc;
                 case "ga"
                     nvars = sum([obj.OptiVars.Enabled]);
@@ -226,10 +404,34 @@ classdef Optimization < handle
             end
         end
         
+        function [oo,range] = EpsilonConstraint(obj, constraint, property, range)
+            con_cache = obj.Constraints;
+            obj.Constraints = [obj.Constraints; constraint];
+            
+            N = numel(range);
+            oo = OptimOutput.empty(N,0);
+            for i = 1:N
+                constraint.(property) = range(i);
+                oo(i) = optiWrapper();
+                disp(oo(i));
+            end
+            obj.Constraints = con_cache;
+            
+            function [oo] = optiWrapper()
+                try
+                    [oo] = Optimize(obj, 'InitializeFromValue', true, 'OptimizationOutput', false, 'OptimizationOpts', {'Display', 'none'});
+                catch
+                    oo = OptimOutput();
+                    oo.exitflag = -4;
+                    oo.F_opt = NaN;
+                end
+            end
+        end
+        
         function [grad, grad_s, hess, hess_s] = fdiff(obj, opts)
             arguments
                 obj
-                opts.Function = obj.Objective
+                opts.Function = getEnabled(obj.Objective)
                 opts.Vars = obj.OptiVars(isEnabled(obj.OptiVars))
                 opts.FiniteDifferenceStepSize = sqrt(eps)
                 opts.HessianStepFactor = 3
@@ -298,167 +500,8 @@ classdef Optimization < handle
                 hess_s = diag(x)*hess*diag(x);
             end
         end
-            
-        function so = sweep(obj, vars, n, opts)
-            % X is the vector of design variable values being swept across.
-            % - 1xn for 1 design var and nxnx2 meshgrid for 2 design vars
-            % ft is a vector or grid of flight times
-            % X_opt is the optimal design point, f_opt is the optimal
-            % flight time
-            % I are the indices 1xv or (i;j)xv corresponding to points where a
-            % valid flight time was obtained. PD and DD are 1xv vectors of 
-            % PerformanceData and DesignData objects evaluated at the valid
-            % points
-            arguments
-                obj
-                vars
-                n double
-                opts.ConstraintFunction = []
-                opts.ReverseSearch logical = false
-                opts.InitializeFromValue logical = false
-            end
-            
-            N_vars = numel(vars);
-            assert(N_vars <=2 && N_vars ~= 0, "Choose 1 or 2 optimization variables for sweep")
-            if ~isa(vars, 'optiVar')
-                try
-                    vars = string(vars);
-                    vars = obj.OptiVars.get(vars);
-                catch
-                    error('vars argument must be optiVar objects or convertable to strings');
-                end
-            end
-            
-            obj.OptiVars.reset();
-            % Obtain baseline optimal point
-            [OO_opt] = Optimize(obj, 'OptimizationOutput', false, 'OptimizationOpts', {'Display', 'none'});
-            F_opt = OO_opt.F_opt;
-            X_opt = vertcat(vars.Value);
-            
-            for i = 1:N_vars
-                % Each variable in the sweep is fixed at a point and is
-                % no longer optimized
-                vars(i).Enabled = false;
-            end
-            
-            switch N_vars
-                case 1
-                    X = linspace(vars, n);
-                    if opts.ReverseSearch
-                        X = fliplr(X);
-                    end
-                    
-                    F = NaN(size(X));
-                    valid_cnt = 0;
-                    for i = 1:numel(X)
-                        vars.Value = X(i);
-                        [OO(i)] = optiWrapper();
-                        F(i) = OO(i).F_opt;
-                        if ~isnan(F(i))
-                            valid_cnt = valid_cnt + 1;
-                            I(1,valid_cnt) = i;
-                            msg = sprintf("Point: %f F: %f", X(i), F(i));
-                        else
-                            msg = sprintf("Point: %f F: NaN", X(i));
-                        end
-                        disp(msg)
-                    end
-                    
-               case 2
-                   x = linspace(vars(1),n);
-                   y = linspace(vars(2),n);
-                   if opts.ReverseSearch
-                       x = fliplr(x);
-                       y = fliplr(y);
-                   end
-                   if ~isempty(opts.ConstraintFunction)
-                       const_fun_flag = true;
-                   else
-                       const_fun_flag = false;
-                   end
-         
-                   F = NaN(numel(y), numel(x));
-                   valid_cnt = 0;
-                   for i = 1:numel(x)
-                       for j = 1:numel(y)
-                           if const_fun_flag
-                               is_valid = (opts.ConstraintFunction([x(i);y(j)])<=0);
-                           else
-                               is_valid = true;
-                           end
-                           
-                           if is_valid
-                               vars(1).Value = x(i);
-                               vars(2).Value = y(j);
-                               [OO(j,i)] = optiWrapper();
-                               F(j,i) = OO(j,i).F_opt;
-                               if ~isnan(F(j,i))
-                                   valid_cnt = valid_cnt + 1;
-                                   I(:,valid_cnt) = [j;i];
-                                   msg = sprintf("Point: (%f, %f) F: %f", x(i), y(j), F(j,i));
-                               else
-                                   msg = sprintf("Point: (%f, %f) F: NaN", x(i), y(j));
-                               end
-                           else
-                               F(j,i) = NaN;
-                               msg = sprintf("Point: (%f, %f) F: Invalid Point", x(i), y(j));
-                           end
-                           disp(msg)
-                       end
-                   end
-                   [X(:,:,1), X(:,:,2)] = meshgrid(x,y);
-           end
-           
-           % Export Sweep Object
-           so = SweepData();
-           so.Vars = vars;
-           so.N_vars = N_vars;
-           so.X = X;
-           so.F = F;
-           so.X_opt = X_opt;
-           so.F_opt = F_opt;
-           so.I = I;
-           so.OO = OO;
-           so.OO_opt = OO_opt;
-           
-           % Clean Up
-           obj.OptiVars.reset();
-           
-            function [oo] = optiWrapper()
-                try
-                    [oo] = Optimize(obj, 'OptimizationOutput', false, 'OptimizationOpts', {'Display', 'none'}, 'InitializeFromValue',opts.InitializeFromValue);
-                catch
-                    oo = OptimOutput();
-                    oo.exitflag = -4;
-                    oo.F_opt = NaN;
-                end
-            end
-        end
         
-        function [oo,range] = EpsilonConstraint(obj, constraint, property, range)
-            con_cache = obj.Constraints;
-            obj.Constraints = [obj.Constraints; constraint];
-            
-            N = numel(range);
-            oo = OptimOutput.empty(N,0);
-            for i = 1:N
-                constraint.(property) = range(i);
-                oo(i) = optiWrapper();
-                disp(oo(i));
-            end
-            obj.Constraints = con_cache;
-            
-            function [oo] = optiWrapper()
-                try
-                    [oo] = Optimize(obj, 'InitializeFromValue', true, 'OptimizationOutput', false, 'OptimizationOpts', {'Display', 'none'});
-                catch
-                    oo = OptimOutput();
-                    oo.exitflag = -4;
-                    oo.F_opt = NaN;
-                end
-            end
-        end
-        
+        %% Discrete Optimization
         function so = searchNearest(obj, target_arg, N_max_search, N_max_comb, opts)
             % CAUTION: This only works if all components of the same Type
             % have the same parameter values.  Need to add additional 
@@ -732,38 +775,6 @@ classdef Optimization < handle
                     fprintf("Objective Function Value: %f\n\n", fval);
                 end 
             end
-        end
-
-        function f_ = objfun(obj, success_flag)
-            if success_flag
-                f_ = f(obj.Objective, obj.QR);
-            else
-                f_ = Inf;
-            end
-            % implement objective function scaling at some point
-        end
-
-        function [c,ceq] = nlcon(obj)
-            c = g(obj.Constraints, obj.QR);
-            ceq = [];
-        end
-        
-        function updateQR(obj, check_prev)
-            if check_prev
-                X = [obj.OptiVars.Value];
-                if ~isempty(obj.X_prev) && all(X == obj.X_prev)
-                    return % Only update variables if the design variables have changed value
-                end
-                obj.X_prev = X;
-            end
-            
-            obj.QR.update();
-        end
-        
-        function resetQR(obj)
-            restoreDependentDefault(obj.DependentParams);
-            loadValues(obj.QR.Params, obj.X0Params);
-            obj.QR.update();
         end
     end
 end

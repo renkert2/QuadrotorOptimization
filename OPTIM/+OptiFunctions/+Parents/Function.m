@@ -36,28 +36,23 @@ classdef Function < handle & matlab.mixin.Heterogeneous
         end
     end
     
-    methods (Sealed)
-        function g = g(obj_array, varargin)
-            en_obj = getEnabled(obj_array);
-            g = arrayfun(@(obj) val2g(obj, obj.Value(varargin{:})), en_obj);
-        end
-        
-        function f = f(obj_array, varargin)
-            en_obj = getEnabled(obj_array);
-            f = arrayfun(@(obj) val2f(obj, obj.Value(varargin{:})), en_obj);
-        end
-        
-        function v = v(obj_array, varargin)
-            en_obj = getEnabled(obj_array);
-            v = arrayfun(@(obj) obj.Value(varargin{:}), en_obj);
-        end
-    end
-    
-    methods (Sealed, Access = private)
+    methods (Sealed)   
         function e = getEnabled(obj_array)
             obj_array = obj_array(:);
             E = vertcat(obj_array.Enabled);
             e = obj_array(E);
+        end
+        
+        function g = g(obj_array, varargin)
+            g = arrayfun(@(obj) val2g(obj, obj.Value(varargin{:})), obj_array);
+        end
+        
+        function f = f(obj_array, varargin)
+            f = arrayfun(@(obj) val2f(obj, obj.Value(varargin{:})), obj_array);
+        end
+        
+        function v = v(obj_array, varargin)
+            v = arrayfun(@(obj) obj.Value(varargin{:}), obj_array);
         end
     end
 end

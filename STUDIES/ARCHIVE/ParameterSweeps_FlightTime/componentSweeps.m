@@ -29,8 +29,8 @@
 % title("Motor Carpet Plot")
 
 %% Propeller
-constraint_func = @(Xp) distToBoundary(o.QR.Propeller.Fit.Boundary, Xp);
-so = sweep(o, ["D","P"], 25, 'ConstraintFunction', constraint_func);
+% constraint_func = @(Xp) distToBoundary(o.QR.Propeller.Fit.Boundary, Xp);
+% so = sweep(o, ["D","P"], 25, 'ConstraintFunction', constraint_func);
 
 propSweep = so;
 save('propSweep.mat', 'propSweep');
