@@ -20,7 +20,7 @@ classdef Optimization < handle
                 load BatteryComponentData.mat BatteryComponentData;
                 load PropellerComponentData.mat PropellerComponentData;
                 load MotorComponentData.mat MotorComponentData;
-                cd = [BatteryComponentData; PropellerComponentData; MotorComponentData];
+                cd = [BatteryComponentData; PropellerComponentData.AllCD; MotorComponentData];
             end
             
             obj.QR = qr;
@@ -36,8 +36,8 @@ classdef Optimization < handle
             motor = obj.QR.PT.Motor;
             
             % Set Optimization Variables
-            OV(1) = optiVar(prop.D, prop.Fit.Boundary.X_lb(1), min(prop.Fit.Boundary.X_ub(1), obj.QR.MaxPropDiameter));
-            OV(2) = optiVar(prop.P, prop.Fit.Boundary.X_lb(2), prop.Fit.Boundary.X_ub(2));            
+            OV(1) = optiVar(prop.D, prop.PropFit.Fit.Boundary.X_lb(1), min(prop.PropFit.Fit.Boundary.X_ub(1), obj.QR.MaxPropDiameter));
+            OV(2) = optiVar(prop.P, prop.PropFit.Fit.Boundary.X_lb(2), prop.PropFit.Fit.Boundary.X_ub(2));            
             OV(3) = optiVar(batt.N_s, batt.Fit.Boundary.X_lb(1),batt.Fit.Boundary.X_ub(1)); % Typically voltage is selected to highest possible value           
             OV(4) = optiVar(batt.Q, batt.Fit.Boundary.X_lb(2),batt.Fit.Boundary.X_ub(2));
             OV(5) = optiVar(motor.kV, motor.Fit.Boundary.X_lb(1), motor.Fit.Boundary.X_ub(1));

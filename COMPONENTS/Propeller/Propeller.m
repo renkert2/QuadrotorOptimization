@@ -30,7 +30,10 @@ classdef Propeller < Component
     end
     
     properties (SetAccess = private)
-       Fit paramFit
+       PropFit PropellerParamFit
+    end
+    properties (Dependent)
+        Fit paramFit
     end
     
     methods
@@ -56,16 +59,21 @@ classdef Propeller < Component
         
         function init(obj)
             load PropellerFit.mat PropellerFit;
-            PropellerFit.Inputs = [obj.D, obj.P];
-            PropellerFit.Outputs = [obj.k_P, obj.k_T, obj.Mass, obj.Price];
-            PropellerFit.setOutputDependency;
-            obj.Fit = PropellerFit;
+            
+            PropellerFit.Fit.Inputs = [obj.D, obj.P];
+            PropellerFit.Fit.Outputs = [obj.k_P, obj.k_T, obj.Mass, obj.Price];
+            PropellerFit.Fit.setOutputDependency;
+            obj.PropFit = PropellerFit;
             
             obj.J.setDependency(@Propeller.calcInertia, [obj.Mass, obj.D]);
             
             obj.k_Q.setDependency(@Propeller.calcTorqueCoefficient, [obj.k_P]);
             obj.K_Q.setDependency(@Propeller.calcLumpedTorqueCoefficient, [obj.k_Q, obj.rho, obj.D]);
             obj.K_T.setDependency(@Propeller.calcLumpedThrustCoefficient, [obj.k_T, obj.rho, obj.D]);
+        end
+        
+        function f = get.Fit(obj)
+            f = obj.PropFit.Fit;
         end
     end
     
