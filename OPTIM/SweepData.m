@@ -57,7 +57,7 @@ classdef SweepData
             % Update later with OO.lamdaDesc
             
             s = lambdaData(obj.OO);
-            desc = [obj.OO(1).lambdaDesc.ineqnonlin];
+            desc = [obj.OO_opt.lambdaDesc.ineqnonlin];
             active = s.ineqnonlin > 0;
             colors = colororder;
             

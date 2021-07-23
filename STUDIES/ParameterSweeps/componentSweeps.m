@@ -1,4 +1,4 @@
-function componentSweeps(objective)
+function ComponentSweeps(objective)
 functions = {@BatterySweep, @MotorSweep, @PropellerSweep};
 parfor i = 1:numel(functions)
     hb = HolyBroS500;
