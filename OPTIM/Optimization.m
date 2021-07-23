@@ -249,6 +249,9 @@ classdef Optimization < handle
                 opts.CaptureState logical = true
                 opts.CheckPrevious logical = true
                 opts.Timer logical = true
+                opts.PlotDesignSpace logical = true
+                opts.PlotGradient logical = false
+                opts.DesignSpaceParent DesignSpacePlot = DesignSpacePlot.empty()
             end
             
             if opts.Timer
@@ -263,7 +266,15 @@ classdef Optimization < handle
                 case "fmincon"
                     optimopts = optimoptions(optimopts, 'Algorithm', 'sqp');
                     if opts.OptimizationOutput
-                        optimopts = optimoptions(optimopts, 'Display', 'iter-detailed', 'PlotFcn', {@optimplotfval,@optimplotfirstorderopt}, 'OutputFcn', {@plotFcnBoundary, @plotFcnGradient});
+                        optimopts = optimoptions(optimopts, 'Display', 'iter-detailed', 'PlotFcn', {@optimplotfval,@optimplotfirstorderopt});
+                        out_plts = {};
+                        if opts.PlotDesignSpace
+                            out_plts{end+1} = @plotFcnBoundary;
+                        end
+                        if opts.PlotGradient
+                            out_plts{end+1} = @plotFcnGradient;
+                        end
+                        optimopts = optimoptions(optimopts, 'OutputFcn', out_plts);
                     end
                 case "ga"
                     optimopts = optimoptions(optimopts, 'UseVectorized', false);
@@ -360,13 +371,18 @@ classdef Optimization < handle
                 switch state
                     case 'init'
                         % Setup for plots or guis
-                        f = figure;
-                        d = DesignSpacePlot(obj.QR,f);
+                        if isempty(opts.DesignSpaceParent)
+                            f = figure;
+                            d = DesignSpacePlot(obj.QR,f);
+                        else
+                            d = opts.DesignSpaceParent;
+                        end
+                        d.addMarker();
                     case 'iter'
                         % Make updates to plot or guis as needed
                         d.update();
                     case 'done'
-                        
+                        d.addMarker();
                 end
             end
             
@@ -402,6 +418,31 @@ classdef Optimization < handle
                         
                 end
             end
+        end
+        
+        function [OO_Final, OO] = OptimizeIterateSpan(obj, fit_handles, spans, opts)
+            arguments
+                obj
+                fit_handles
+                spans
+                opts.Display = true
+            end
+                
+            OO = OptimOutput.empty(numel(spans),0);
+            
+            if opts.Display
+                dsp = DesignSpacePlot(obj.QR);
+            else
+                dsp = DesignSpacePlot.empty;
+            end
+            
+            for i = 1:numel(spans)
+                for j = 1:numel(fit_handles)
+                    fit_handles(j).setSpan(spans(i));
+                end
+                OO(i) = Optimize(obj, 'InitializeFromValue', true, 'InitWeights', [1 0], 'DesignSpaceParent', dsp, 'PlotDesignSpace', true);
+            end
+            OO_Final = OO(end);
         end
         
         function [oo,range] = EpsilonConstraint(obj, constraint, property, range)
