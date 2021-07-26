@@ -6,7 +6,7 @@ classdef PropellerParamFit < handle
     properties
         ProductLines
         FitClass string = "loess"
-        LoessSpan double = 0.5
+        LoessSpan double = 0.8
     end
     
     methods
@@ -21,6 +21,10 @@ classdef PropellerParamFit < handle
             obj.Fit = paramFit(2,4);
             obj.setFitTypesOpts();
             obj.updateFitData();
+            
+            % Defaults
+            obj.ProductLines = ["E", "F"];
+            obj.LoessSpan = 0.8;
         end
         
         function p = get.ProductLines(obj)

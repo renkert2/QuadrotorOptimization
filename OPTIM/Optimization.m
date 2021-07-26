@@ -18,9 +18,10 @@ classdef Optimization < handle
         function obj = Optimization(qr, cd)
             if nargin == 1
                 load BatteryComponentData.mat BatteryComponentData;
-                load PropellerComponentData.mat PropellerComponentData;
+                %load PropellerComponentData.mat PropellerComponentData;
+                PropellerComponentData = qr.PT.Propeller.PropFit.CD.AllCD;
                 load MotorComponentData.mat MotorComponentData;
-                cd = [BatteryComponentData; PropellerComponentData.AllCD; MotorComponentData];
+                cd = [BatteryComponentData; PropellerComponentData; MotorComponentData];
             end
             
             obj.QR = qr;
