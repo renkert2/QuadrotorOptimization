@@ -58,12 +58,11 @@ classdef Propeller < Component
         end
         
         function init(obj)
-            load PropellerFit.mat PropellerFit;
-            
-            PropellerFit.Fit.Inputs = [obj.D, obj.P];
-            PropellerFit.Fit.Outputs = [obj.k_P, obj.k_T, obj.Mass, obj.Price];
-            PropellerFit.Fit.setOutputDependency;
-            obj.PropFit = PropellerFit;
+            pf = PropellerParamFit();
+            pf.Fit.Inputs = [obj.D, obj.P];
+            pf.Fit.Outputs = [obj.k_P, obj.k_T, obj.Mass, obj.Price];
+            pf.Fit.setOutputDependency;
+            obj.PropFit = pf;
             
             obj.J.setDependency(@Propeller.calcInertia, [obj.Mass, obj.D]);
             

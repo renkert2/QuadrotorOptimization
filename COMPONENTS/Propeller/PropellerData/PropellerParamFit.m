@@ -10,10 +10,12 @@ classdef PropellerParamFit < handle
     end
     
     methods
-        function obj = PropellerParamFit()            
-            % Set Data
-            load PropellerComponentData.mat PropellerComponentData;
-            obj.CD = PropellerComponentData;
+        function obj = PropellerParamFit(cd)
+            if nargin ==1
+                obj.CD = cd;
+            else
+                obj.CD = PropellerComponentData();
+            end
             
             % Construct paramFit object
             obj.Fit = paramFit(2,4);
