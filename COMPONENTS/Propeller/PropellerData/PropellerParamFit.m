@@ -5,10 +5,8 @@ classdef PropellerParamFit < handle
     end
     properties
         ProductLines
-        FitClass string = "loess"
-        LoessSpan double = 0.8
     end
-    
+
     methods
         function obj = PropellerParamFit(cd)
             if nargin ==1
@@ -21,10 +19,6 @@ classdef PropellerParamFit < handle
             obj.Fit = paramFit(2,4);
             obj.setFitTypesOpts();
             obj.updateFitData();
-            
-            % Defaults
-            obj.ProductLines = ["E", "F"];
-            obj.LoessSpan = 0.8;
         end
         
         function p = get.ProductLines(obj)
@@ -33,42 +27,42 @@ classdef PropellerParamFit < handle
 
         function set.ProductLines(obj, p)
             obj.CD.ProductLines = p;
+            obj.setFitTypesOpts;
             obj.updateFitData();
         end
-        
-        function set.FitClass(obj, c)
-            obj.FitClass = c;
-            obj.setFitTypesOpts();
-            obj.updateFitModels();
-        end
-        
-        function set.LoessSpan(obj,s)
-            if ~isempty(obj.Fit)
-                obj.Fit.setSpan(s);
-            end
-            obj.LoessSpan = s;
-        end
-        
+ 
         function setFitTypesOpts(obj)
-            switch obj.FitClass
-                case "loess"
-                    default_span = obj.LoessSpan;
-                    ft = fittype( 'loess' );
-                    opts = fitoptions( 'Method', 'LowessFit' );
-                    opts.Normalize = 'on';
-                    opts.Robust = 'Bisquare';
-                    opts.Span = default_span;
-                case "interp"
-                    ft = fittype('thinplateinterp');
-                    opts = fitoptions(ft);
-                    opts.Normalize = 'on';
+            PL = obj.ProductLines;
+            if all(PL == "E") || numel(intersect(["E" "F"], PL)) == 2
+                ft = fittype( 'loess' );
+                opts = fitoptions( 'Method', 'LowessFit' );
+                opts.Normalize = 'on';
+                opts.Robust = 'Bisquare';
+                opts.Span = 0.8;
+            elseif all(PL == "MR")
+%                 ft = fittype('thinplateinterp');
+%                 opts = fitoptions(ft);
+                  % opts.Normalize = 'on';
+                ft = 'cubicinterp';
+                opts = fitoptions(ft); 
+                opts.Normalize = 'on';
+            elseif all(PL == "SF")
+                ft = fittype( 'poly22' );
+                opts = fitoptions( ft );
+                opts.Normalize = 'on';
+            else
+                ft = fittype('loess');
+                opts = fitoptions( 'Method', 'LowessFit' );
+                opts.Normalize = 'on';
+                opts.Robust = 'Bisquare';
+                opts.Span = 0.8;
             end
             
-            ft_price = fittype( 'poly21' );
-            opts_price = fitoptions('Method', 'LinearLeastSquares');
-            
-            obj.Fit.FitTypes = {ft, ft, ft, ft_price};
-            obj.Fit.FitOpts = {opts, opts, opts, opts_price};
+%             ft_price = fittype( 'poly21' );
+%             opts_price = fitoptions('Method', 'LinearLeastSquares');
+%             
+            obj.Fit.FitTypes = {ft, ft, ft, ft};
+            obj.Fit.FitOpts = {opts, opts, opts, opts};
         end
         
         function updateFitData(obj)
