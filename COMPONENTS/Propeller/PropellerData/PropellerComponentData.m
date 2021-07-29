@@ -17,7 +17,6 @@ classdef PropellerComponentData < handle
     
     methods
         function obj = PropellerComponentData()
-            addpath('APC_DATA')
             PropellerComponentData = ComponentData.importFromJSON('PropellerComponentDatabase.json');
             obj.AllCD = PropellerComponentData;
             obj.SKUs = vertcat(obj.AllCD.SKU);
