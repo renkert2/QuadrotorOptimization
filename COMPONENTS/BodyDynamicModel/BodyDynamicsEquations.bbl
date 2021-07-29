@@ -1,0 +1,21 @@
+\begin{thebibliography}{1}
+
+\bibitem{ClassicalDynamicsParticles1965}
+{\em Classical {{Dynamics}} of {{Particles}} and {{Systems}}}.
+\newblock {Elsevier}, 1965.
+
+\bibitem{ParallelAxisTheorem2021}
+Parallel axis theorem.
+\newblock {\em Wikipedia}, June 2021.
+
+\bibitem{quanIntroductionMulticopterDesign2017}
+Quan Quan.
+\newblock {\em Introduction to {{Multicopter Design}} and {{Control}}}.
+\newblock {Springer Singapore}, {Singapore}, 2017.
+
+\bibitem{zhaoTimeDerivativeRotation2016}
+Shiyu Zhao.
+\newblock Time {{Derivative}} of {{Rotation Matrices}}: {{A Tutorial}}.
+\newblock {\em arXiv:1609.06088 [cs]}, September 2016.
+
+\end{thebibliography}

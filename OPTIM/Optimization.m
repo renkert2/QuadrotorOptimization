@@ -470,13 +470,14 @@ classdef Optimization < handle
             end
         end
         
-        function [grad, grad_s, hess, hess_s] = fdiff(obj, opts)
+        function [grad, grad_s, hess, hess_s, f] = fdiff(obj, opts)
             arguments
                 obj
                 opts.Function = getEnabled(obj.Objective)
                 opts.Vars = obj.OptiVars(isEnabled(obj.OptiVars))
                 opts.FiniteDifferenceStepSize = sqrt(eps)
                 opts.HessianStepFactor = 3
+                opts.ScaleFunction = true
             end
             
             vars = opts.Vars;
@@ -492,18 +493,18 @@ classdef Optimization < handle
             N = numel(vars);
             
             % Calculate Gradient
-            [grad, grad_s] = calcGradient();
+            [grad, grad_s, f] = calcGradient();
             
             % Calculate Hessian
             if nargout > 2
-                [hess, hess_s] = calcHessian(grad);
+                [hess, hess_s] = calcHessian(grad,f);
             end
             
             % Cleanup
             setDependent(obj.DependentParams, dep_cache);
             loadValues(obj.QR.Params, param_cache);
             
-            function [grad, grad_s] = calcGradient()             
+            function [grad, grad_s, f] = calcGradient()             
                 delta = v.*x;
                 f = F.f(obj.QR);
                 grad = zeros(N,1);
@@ -520,9 +521,12 @@ classdef Optimization < handle
                     var.Value = val_cache;
                 end
                 grad_s = x.*grad;
+                if opts.ScaleFunction
+                    grad_s = grad_s / abs(f);
+                end
             end
             
-            function [hess, hess_s] = calcHessian(grad)
+            function [hess, hess_s] = calcHessian(grad,f)
                 delta = (v.^(1/opts.HessianStepFactor)).*x;
                 g = grad;
                 hess = zeros(N,N);
@@ -540,6 +544,9 @@ classdef Optimization < handle
                 end
                 hess = (hess + hess.')/2; % Transform to symmetric
                 hess_s = diag(x)*hess*diag(x);
+                if opts.ScaleFunction
+                    hess_s = hess_s / abs(f);
+                end
             end
         end
         

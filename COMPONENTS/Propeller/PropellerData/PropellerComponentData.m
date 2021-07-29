@@ -5,7 +5,7 @@ classdef PropellerComponentData < handle
         AllProductLines = ["E","F","MR","SF"]
     end
     properties
-        ProductLines = ["E","F","MR","SF"]
+        ProductLines = ["E"]
         AllCD ComponentData
     end
     properties (Access = private)
