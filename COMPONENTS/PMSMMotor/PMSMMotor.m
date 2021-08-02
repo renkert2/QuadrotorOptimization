@@ -20,7 +20,10 @@ classdef PMSMMotor < Component
        K_t 
     end
     
-    properties (SetAccess = private)
+    properties(SetAccess = private)
+        Surrogate MotorSurrogate
+    end
+    properties (Dependent)
         Fit paramFit
     end
     
@@ -58,13 +61,16 @@ classdef PMSMMotor < Component
         end
         
         function init(obj)
-            load MotorFit.mat MotorFit;
-            MotorFit.Inputs = [obj.kV, obj.Rm];
-            MotorFit.Outputs = [obj.Mass, obj.D, obj.Price];
-            MotorFit.setOutputDependency;
-            obj.Fit = MotorFit;
+            ms = MotorSurrogate();
+            ms.Fit.Inputs = [obj.kV, obj.Rm];
+            ms.Fit.Outputs = [obj.Mass, obj.D, obj.Price];
+            ms.Fit.setOutputDependency;
+            obj.Surrogate = ms;
             
             obj.J.setDependency(@PMSMMotor.calcInertia, [obj.Mass, obj.D]);
+        end
+        function f = get.Fit(obj)
+            f = obj.Surrogate.Fit;
         end
     end
     

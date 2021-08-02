@@ -30,17 +30,22 @@ classdef Battery < Component
     
     properties (SetAccess = private)
         Nominal_SOC double = 1 % SOC at which V_OCV(q) = V_OCV_nominal
-        Averaged_SOC double % SOC at which V_OCV(q) = V_OCV_Average
-        
-        Fit paramFit
+        Averaged_SOC double % SOC at which V_OCV(q) = V_OCV_Average  
     end
     
-    properties (Dependent)
+    properties (Dependent)        
         V_OCV_averaged double
         OperatingCapacity double
         ChargeTime double % Seconds
     end
     
+    properties(SetAccess = private)
+        Surrogate BatterySurrogate
+    end
+    properties (Dependent)
+        Fit paramFit
+    end
+
     methods        
         function setV_OCV_curve(obj,arg)
             if isa(arg, 'BattLookup')
@@ -106,11 +111,11 @@ classdef Battery < Component
             end
             
             
-            load BatteryFit.mat BatteryFit;
-            BatteryFit.Inputs = [obj.N_s, obj.Q];
-            BatteryFit.Outputs = [obj.R_s, obj.Mass, obj.Price];
-            BatteryFit.setOutputDependency();
-            obj.Fit = BatteryFit;
+            bs = BatterySurrogate();
+            bs.Fit.Inputs = [obj.N_s, obj.Q];
+            bs.Fit.Outputs = [obj.R_s, obj.Mass, obj.Price];
+            bs.Fit.setOutputDependency();
+            obj.Surrogate = bs;
             
             rpfun = @(N_s,N_p,R_s) N_s./N_p.*R_s;
             setDependency(obj.R_p, rpfun, [obj.N_s, obj.N_p, obj.R_s]);
@@ -124,6 +129,9 @@ classdef Battery < Component
             obj.V_OCV_pack = matlabFunction([obj.N_s], V_pack_sym, {sym('q')});
             
             calcAveraged_SOC(obj);
+        end
+        function f = get.Fit(obj)
+            f = obj.Surrogate.Fit;
         end
     end
     

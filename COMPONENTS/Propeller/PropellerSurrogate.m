@@ -1,4 +1,4 @@
-classdef PropellerParamFit < handle
+classdef PropellerSurrogate < handle
     properties
         CD PropellerComponentData
         Fit paramFit
@@ -8,7 +8,7 @@ classdef PropellerParamFit < handle
     end
 
     methods
-        function obj = PropellerParamFit(cd)
+        function obj = PropellerSurrogate(cd)
             if nargin ==1
                 obj.CD = cd;
             else

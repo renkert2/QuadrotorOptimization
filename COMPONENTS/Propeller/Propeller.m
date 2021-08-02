@@ -30,7 +30,7 @@ classdef Propeller < Component
     end
     
     properties (SetAccess = private)
-       PropFit PropellerParamFit
+       Surrogate PropellerSurrogate
     end
     properties (Dependent)
         Fit paramFit
@@ -58,11 +58,11 @@ classdef Propeller < Component
         end
         
         function init(obj)
-            pf = PropellerParamFit();
-            pf.Fit.Inputs = [obj.D, obj.P];
-            pf.Fit.Outputs = [obj.k_P, obj.k_T, obj.Mass, obj.Price];
-            pf.Fit.setOutputDependency;
-            obj.PropFit = pf;
+            ps = PropellerSurrogate();
+            ps.Fit.Inputs = [obj.D, obj.P];
+            ps.Fit.Outputs = [obj.k_P, obj.k_T, obj.Mass, obj.Price];
+            ps.Fit.setOutputDependency;
+            obj.Surrogate = ps;
             
             obj.J.setDependency(@Propeller.calcInertia, [obj.Mass, obj.D]);
             
@@ -72,7 +72,7 @@ classdef Propeller < Component
         end
         
         function f = get.Fit(obj)
-            f = obj.PropFit.Fit;
+            f = obj.Surrogate.Fit;
         end
     end
     
