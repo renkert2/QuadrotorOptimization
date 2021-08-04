@@ -4,7 +4,7 @@ classdef SearchOutput
     
     properties
         SearchTime duration % Time required to complete search
-        Objective (1,1) OptimObjectives
+        Objective
 
         F0 (1,1)
         F_opt (1,1)
@@ -18,6 +18,7 @@ classdef SearchOutput
         NormalizedDistances(:,1)
         Weights
         DistanceMode string
+        SortMode string
         ModifiedParameters (:,1) compParam
         ComponentNames string
     end

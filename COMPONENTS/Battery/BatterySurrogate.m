@@ -50,10 +50,13 @@ classdef BatterySurrogate < handle
             f = @(a, b, x, y) a*x.*y + b;
             ftM = fittype( f , 'independent', {'x','y'}, 'dependent', {'z'});
             foM = fitoptions('Method', 'NonlinearLeastSquares');
+            foM.Robust = 'Bisquare';
+            foM.StartPoint = [0.619415251298952 0.613880978184139];
             
             ftP = fittype( 'poly33' );
             foP = fitoptions( 'Method', 'LinearLeastSquares' );
-            foP.Robust = 'Bisquare';
+            foP.Normalize = 'on';
+
 %             
 %             ft = fittype( 'loess' );
 %             opts = fitoptions( 'Method', 'LowessFit' );

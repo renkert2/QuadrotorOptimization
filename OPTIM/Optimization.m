@@ -4,7 +4,7 @@ classdef Optimization < handle
         OptiVars (:,1) optiVar
         DependentParams (:,1) compParam
         
-        Objective OptiFunctions.Parents.Function = OptiFunctions.FlightTime();
+        Objective OptiFunctions.Parents.Function = OptiFunctions.FlightTimePerPrice();
         Constraints OptiFunctions.Parents.Function = [OptiFunctions.BatteryBoundary; OptiFunctions.MotorBoundary; OptiFunctions.PropellerBoundary; OptiFunctions.InputConstraint]        
         CD ComponentData % ComponentDatabase 
     end
@@ -550,7 +550,7 @@ classdef Optimization < handle
         end
         
         %% Discrete Optimization
-        function so = searchNearest(obj, target_arg, N_max_search, N_max_comb, opts)
+        function so = Search(obj, target_arg, N_max_search, N_max_comb, opts)
             % CAUTION: This only works if all components of the same Type
             % have the same parameter values.  Need to add additional 
             % Functionality if there are two components of the same type with 
@@ -562,7 +562,7 @@ classdef Optimization < handle
                 N_max_search = inf
                 N_max_comb (1,1) double = inf
                 opts.EnforceBounds logical = true
-                opts.BruteResort logical = false
+                opts.SortMode string = "Distance" % Options: "None", "Distance", "Objective"
                 opts.DistanceMode string = "Norm" % Options: "Norm", "WeightedNorm"
                 opts.Weights = []
                 opts.Display logical = false
@@ -574,6 +574,7 @@ classdef Optimization < handle
                 timer = tic;
             end
             
+            opti_var_vals = getValues(filterEnabled(obj.OptiVars, "Child"));
             if ~isempty(target_arg)
                 if isa(target_arg, 'OptimOutput')
                     target = target_arg.ParamVals;
@@ -581,7 +582,7 @@ classdef Optimization < handle
                     target = target_arg;
                 end
             else
-                target = getValues(filterEnabled(obj.OptiVars, "Child"));
+                target = opti_var_vals;
             end
 
             % Get Initial component sets based on distance from optimal
@@ -589,23 +590,27 @@ classdef Optimization < handle
             if opts.EnforceBounds
                 lb = filterEnabled(obj.OptiVars,"lb");
                 ub = filterEnabled(obj.OptiVars,"ub");
+                cd = filterBounds(obj.CD, opti_var_vals, lb, ub);
             else
-                lb = [];
-                ub = [];
+                cd = obj.CD;
             end
             
-            F0 = processF(obj, objfun(obj, true));
+            F0 = obj.Objective.Value(obj.QR);
             
-            [cd,d,comp_names] = filterNearest(obj.CD, target, N_max_search, 'LB', lb, 'UB', ub, 'DistanceMode', opts.DistanceMode, 'Weights', opts.Weights);
+            if opts.SortMode == "Distance" || opts.SortMode == "Objective"
+                [cd_cell,d,comp_names] = filterNearest(cd, target, N_max_search, 'DistanceMode', opts.DistanceMode, 'Weights', opts.Weights);
+            else
+                [cd_cell, comp_names] = separateComponents(cd, target);
+            end
             
             setDependent(obj.DependentParams, true); % We want to make sure that any parameter values we don't suppy are handled by the surrogate models
-            if opts.BruteResort
+            if opts.SortMode == "Objective"
                 loadValues(obj.QR.Params, target); % Set QR Parameters to the optimal target design
                 oopv_cache = getValues(obj.QR.Params); % Cache QuadRotor Parameters
-                d_sorted = cell(size(cd));
-                cd_sorted = cell(size(cd));
+                d_sorted = cell(size(cd_cell));
+                cd_sorted = cell(size(cd_cell));
                 for i = 1:numel(d_sorted)
-                    comps = cd{i};
+                    comps = cd_cell{i};
                     N_comps = numel(comps);
                     d_objective_comp = NaN(N_comps, 1);
                     for j = 1:N_comps
@@ -621,48 +626,52 @@ classdef Optimization < handle
                 end
                 
                 d = d_sorted;
-                cd = cd_sorted;
+                cd_cell = cd_sorted;
             end
             
             % Apply second N_max here if necessary to reduce number of
             % combinations to evaluate
             
-            [comb_array,comb_I] = combinations(cd{:});
+            [comb_array,comb_I] = combinations(cd_cell{:});
             sz = size(comb_array);
             
-            % comb_d: matrix of size comb_array corresponding to distance
-            % of component from target
-            comb_d = NaN(sz);
-            for i_col = 1:sz(2)
-                col = d{i_col};
-                comb_d(:,i_col) = col(comb_I(:,i_col));
-            end
-            
-            if opts.BruteResort
-                % Sort component combinations by mean objective function value
-                comb_d_norm = mean(comb_d,2);
-            else
-                switch opts.DistanceMode
-                    case "Norm"
-                        comb_d_norm = vecnorm(comb_d, 2, 2);
-                    case "WeightedNorm"
-                        comb_d_norm = vecnorm(comb_d, 2, 2);
+            if opts.SortMode == "Distance" || opts.SortMode == "Objective"
+                % comb_d: matrix of size comb_array corresponding to distance
+                % of component from target
+                comb_d = NaN(sz);
+                for i_col = 1:sz(2)
+                    col = d{i_col};
+                    comb_d(:,i_col) = col(comb_I(:,i_col));
                 end
+                
+                
+                if opts.SortMode == "Objective"
+                    % Sort component combinations by mean objective function value
+                    comb_d_norm = mean(comb_d,2);
+                else
+                    switch opts.DistanceMode
+                        case "Norm"
+                            comb_d_norm = vecnorm(comb_d, 2, 2);
+                        case "WeightedNorm"
+                            comb_d_norm = vecnorm(comb_d, 2, 2);
+                    end
+                end
+                
+                [sorted_d_norm, I_d] = sort(comb_d_norm);
+                
+                comb_array = comb_array(I_d, :);
+                comb_d = comb_d(I_d, :);
+                comb_I = comb_I(I_d, :);
             end
-                       
-            [sorted_d_norm, I_d] = sort(comb_d_norm);
-            
-            comb_array = comb_array(I_d, :);
-            comb_d = comb_d(I_d, :);
-            comb_I = comb_I(I_d, :);
-            
+                
             % Apply N_max_comb to restrict total number of combinations
             N_combs = min(size(comb_array, 1), N_max_comb);
             R = 1:N_combs;
             comb_array = comb_array(R,:);
-            comb_d = comb_d(R,:);
+            if opts.SortMode == "Distance" || opts.SortMode == "Objective"
+                comb_d = comb_d(R,:);
+            end
             comb_I = comb_I(R,:);
-            
             
             if opts.Plot
                 figure('Name', 'Nearest Neighbor Search')
@@ -683,30 +692,32 @@ classdef Optimization < handle
                 ax_optpoint = plot(ax_f, xlim(1), ylim(1), '.r', 'MarkerSize', 20);
                 hold off
                 
-                % Distance Plot
-                ax_d = subplot(2,1,2);
-                co = colororder; % Gets default plot colors as rgb matrix
-                
-                if opts.BruteResort
-                    % Sort component combinations by mean objective function value
-                    aggregate_label = "Average";
-                    individual_label = "ObjFun";
-                else
-                    aggregate_label = "Norm";
-                    individual_label = "d";
+                if opts.SortMode == "Distance" || opts.SortMode == "Objective"
+                    % Distance Plot
+                    ax_d = subplot(2,1,2);
+                    co = colororder; % Gets default plot colors as rgb matrix
+                    
+                    if opts.SortMode == "Objective"
+                        % Sort component combinations by mean objective function value
+                        aggregate_label = "Average";
+                        individual_label = "ObjFun";
+                    else
+                        aggregate_label = "Norm";
+                        individual_label = "d";
+                    end
+                    
+                    for i = 1:sz(2)
+                        color = co(i,:);
+                        an_d(i) = animatedline(ax_d, 'DisplayName', comp_names(i), 'Color', color);
+                    end
+                    
+                    an_d_norm = animatedline(ax_d, 'DisplayName', aggregate_label);
+                    
+                    title("Component Distance Metric")
+                    ylabel(individual_label);
+                    xlabel("Iteration")
+                    legend
                 end
-                
-                for i = 1:sz(2)
-                    color = co(i,:);
-                    an_d(i) = animatedline(ax_d, 'DisplayName', comp_names(i), 'Color', color);
-                end
-                
-                an_d_norm = animatedline(ax_d, 'DisplayName', aggregate_label);
-                
-                title("Component Distance Metric")
-                ylabel(individual_label);
-                xlabel("Iteration")
-                legend
             end
 
             fvals = NaN(N_combs, 1);
@@ -720,21 +731,22 @@ classdef Optimization < handle
                [fvals(i,1), ~] = evalCombination(obj, comb, opts.Display);
                
                % update optimal configuration
-               [opt_fval, opt_i] = min(fvals);  
+               [opt_fval, opt_i] = min(fvals);
                opt_comb = comb_array(opt_i,:);
-                if opts.Display
-                    fprintf("Current Optimal: I = %d, Objective Function: %f\n", opt_i, opt_fval);
-                end 
+               if opts.Display
+                   fprintf("Current Optimal: I = %d, Objective Function: %f\n", opt_i, opt_fval);
+               end
                
                
                if opts.Plot
                    % Update Points
                    addpoints(an_f, i, fvals(i,1));
-                   for j = 1:sz(2)
-                       addpoints(an_d(j), i, comb_d(i,j))
+                   if opts.SortMode == "Distance" || opts.SortMode == "Objective"
+                       for j = 1:sz(2)
+                           addpoints(an_d(j), i, comb_d(i,j))
+                       end
+                       addpoints(an_d_norm, i, sorted_d_norm(i));
                    end
-                   addpoints(an_d_norm, i, sorted_d_norm(i));
-                   
                    % Update Optimal Point
                    set(ax_optpoint, 'XData', opt_i, 'YData', opt_fval);
                    
@@ -746,15 +758,17 @@ classdef Optimization < handle
                    
                    drawnow
                end
-
-            end 
+               
+            end
             
             % Sort component configurations from best to worst
             [sorted_fvals,I] = sort(fvals, 'ascend');
             sorted_combs = comb_array(I,:); % Component combinations sorted by objective
-            sorted_distances = comb_d(I,:);
             sorted_component_indices = comb_I(I,:);
-            normalized_distances = sorted_d_norm(I,:);
+            if opts.SortMode == "Distance" || opts.SortMode == "Objective"
+                sorted_distances = comb_d(I,:);
+                normalized_distances = sorted_d_norm(I,:);
+            end
             
             % Set QuadRotor to Optimal Configuration
             if opts.Display
@@ -763,25 +777,28 @@ classdef Optimization < handle
             [~,pmod] = evalCombination(obj, opt_comb, opts.Display);
             % All of pmod currently independent.
             
-            sorted_FVals = processF(obj, sorted_fvals);
+            sorted_FVals = f2val(obj.Objective, sorted_fvals);
             
             % Package Output
             so = SearchOutput();
             so.Objective = obj.Objective;
             so.OptimalConfiguration = opt_comb;
             so.F0 = F0;
-            so.F_opt = obj.processF(opt_fval);
+            so.F_opt = f2val(obj.Objective, opt_fval);
             so.OptimalIteration = opt_i;
             so.SortedConfigurations = sorted_combs;
             so.SortedFVals = sorted_FVals;
-            so.SortedDistances = sorted_distances;
             so.SortedComponentIndices = sorted_component_indices;
-            so.NormalizedDistances = normalized_distances;
             so.ModifiedParameters = pmod;
             so.ComponentNames = comp_names;
-            so.DistanceMode = "Norm";
+            so.DistanceMode = opts.DistanceMode;
+            so.SortMode = opts.SortMode;
             if opts.Timer
                 so.SearchTime = seconds(toc(timer));
+            end
+            if opts.SortMode == "Distance" || opts.SortMode == "Objective"
+                so.SortedDistances = sorted_distances;
+                so.NormalizedDistances = normalized_distances;
             end
             
             function [fval, pmod] = evalCombination(obj, comb, dispflag)
@@ -804,7 +821,7 @@ classdef Optimization < handle
                 
                 % Check Constraints
                 if valid
-                    [c,~] = nlcon(obj, valid);
+                    [c,~] = nlcon(obj);
                     if any(c > 0)
                         valid = false;
                     end
