@@ -61,16 +61,26 @@ classdef Optimization < handle
         end
         
         function f_ = objfun(obj, success_flag)
+            if nargin == 1
+                success_flag = true;
+            end
             if success_flag
                 f_ = f(getEnabled(obj.Objective), obj.QR);
             else
-                f_ = Inf;
+                f_ = NaN;
             end
             % implement objective function scaling at some point
         end
 
-        function [c,ceq] = nlcon(obj)
-            c = g(getEnabled(obj.Constraints), obj.QR);
+        function [c,ceq] = nlcon(obj, success_flag)
+            if nargin == 1
+                success_flag = true;
+            end
+            if success_flag
+                c = g(getEnabled(obj.Constraints), obj.QR);
+            else
+                c = NaN(size(getEnabled(obj.Constraints)));
+            end
             ceq = [];
         end
         
@@ -306,7 +316,7 @@ classdef Optimization < handle
                     end
                     OO.X0 = unscale(obj.OptiVars);
                     
-                    [X_opt_s, f_opt, OO.exitflag, ~, OO.lambda, grad_s, hessian_s] = fmincon(@objfun_local ,x0, [], [], [], [], lb, ub, @nlcon_local, optimopts);
+                    [X_opt_s, f_opt, OO.exitflag, OO.output, OO.lambda, grad_s, hessian_s] = fmincon(@objfun_local ,x0, [], [], [], [], lb, ub, @nlcon_local, optimopts);
                     
                     s = 1./vertcat(obj.OptiVars.scaleFactors);
                     S = diag(s);
@@ -822,7 +832,7 @@ classdef Optimization < handle
                 % Check Constraints
                 if valid
                     [c,~] = nlcon(obj);
-                    if any(c > 0)
+                    if any(c > 1e-6) % Constraint tolerance of continuous optimization solution
                         valid = false;
                     end
                 end
@@ -839,6 +849,97 @@ classdef Optimization < handle
                     disp(summaryTable(comb))
                     fprintf("Objective Function Value: %f\n\n", fval);
                 end 
+            end
+        end
+        
+        function gao = DiscreteGA(obj, opts)
+            arguments
+                obj
+                opts.GAOpts cell = {};
+                opts.EnforceBounds = true;
+            end
+            
+            opti_var_vals = getValues(filterEnabled(obj.OptiVars, "Child"));
+            if opts.EnforceBounds
+                lb = filterEnabled(obj.OptiVars,"lb");
+                ub = filterEnabled(obj.OptiVars,"ub");
+                cd = filterBounds(obj.CD, opti_var_vals, lb, ub);
+            else
+                cd = obj.CD;
+            end
+            
+            [cd_cell, comp_names, N_comps] = separateComponents(cd, opti_var_vals);
+            N_comp_types = numel(comp_names);
+            nvars = N_comp_types;
+            lb = ones(size(N_comps));
+            ub = N_comps;
+            IntCon = 1:N_comp_types;
+            
+            gaopts = optimoptions('ga','PlotFcn',{'gaplotbestf', 'gaplotbestindiv'});
+            gaopts = optimoptions(gaopts, opts.GAOpts{:});
+            
+            [X_opt,f_opt,exitflag,output,population,scores] = ga(@objfun_local,nvars,[],[],[],[],lb,ub,@nlcon_local,IntCon,gaopts);
+            opt_comb = getComb(X_opt);
+            
+            % Set QR to Optimal Combination
+            [~,~, pmod] = evalCombination(opt_comb);
+            
+            gao = struct();
+            gao.Objective = obj.Objective;
+            gao.X_opt = X_opt;
+            gao.OptimalConfiguration = opt_comb;
+            gao.ModifiedParameters = pmod;
+            gao.f_opt = f_opt;
+            gao.F_opt = f2val(obj.Objective, f_opt);
+            gao.exitflag = exitflag;
+            gao.output = output;
+            gao.population = population;
+            gao.scores = scores;
+            
+            function f = objfun_local(X)
+                comb = getComb(X);
+                [f,~] = evalCombination(comb);
+            end
+            
+            function [c,ceq] = nlcon_local(X)
+                comb = getComb(X);
+                [~,c] = evalCombination(comb);
+                ceq = [];
+            end
+            
+            function [fval, c, pmod] = evalCombination(comb)
+                cpv = vertcat(comb.Data);
+                
+                % Load Values into Parameters
+                pmod = loadValues(obj.QR.Params, cpv);
+                
+                % Cache Dependency of Modified Parameters and make all
+                % Independent
+                dep_cache = setDependent(pmod, false); % Makes each element of pmod independent
+                
+                % Update QuadRotor
+                try
+                    updateQR(obj, true);
+                    valid = true;
+                catch
+                    valid = false;
+                end
+                                
+                % Evaluate and Store Objective Function
+                fval = objfun(obj, valid);
+                
+                % Evaluate Constraint Function
+                [c,~] = nlcon(obj, valid);
+                     
+               % Restore Dependency of Modified Parameters before returning
+                setDependent(pmod, dep_cache);
+            end
+            
+            function comb = getComb(X)
+                comb = ComponentData.empty(0,N_comp_types);
+                for i = 1:N_comp_types
+                    comb(i) = cd_cell{i}(X(i));
+                end
             end
         end
     end

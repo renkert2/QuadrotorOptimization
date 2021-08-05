@@ -14,17 +14,13 @@ classdef OptimOutput
         F_opt
         
         exitflag
+        output
         
         %fmincon outputs
         lambda
         lambdaDesc % Descriptions matching form of lambda struct
         grad
         hessian
-        
-        %ga outputs
-        output
-        population
-        scores
         
         PerformanceData 
         DesignData
