@@ -754,7 +754,10 @@ classdef Optimization < handle
             end
 
             fvals = NaN(N_combs, 1);
-            fvals_stall = NaN(opts.MaxStallIterations,1);
+            if ~isinf(opts.MaxStallIterations)
+                fvals_stall = NaN(opts.MaxStallIterations,1);
+            end
+            
             for i = 1:N_combs
                comb = comb_array(i,:); % Array of ComponentData objects
                
@@ -798,21 +801,23 @@ classdef Optimization < handle
                    terminate = true;
                end
                
-               if i <= opts.MaxStallIterations
-                   fvals_stall(i) = opt_fval;
-               else
-                   fvals_stall = circshift(fvals_stall,-1,1);
-                   fvals_stall(end,1) = opt_fval;
-               end
-               if i >= opts.MaxStallIterations
-                   I = ~isnan(fvals_stall) & ~isinf(fvals_stall);
-                   fvals_stall = fvals_stall(I);
-                   if any(I)
-                       rel_change = abs((max(fvals_stall) - min(fvals_stall))/mean(fvals_stall));
-                       fprintf_("Relative Change: %f\n", rel_change);
-                       if rel_change < opts.FunctionTolerance
-                           fprintf_("Relative change %f over %d iterations is less than the FunctionTolerance %f.  Terminating search.\n\n",rel_change,opts.MaxStallIterations,opts.FunctionTolerance);
-                           terminate = true;
+               if ~isinf(opts.MaxStallIterations)
+                   if i <= opts.MaxStallIterations
+                       fvals_stall(i) = opt_fval;
+                   else
+                       fvals_stall = circshift(fvals_stall,-1,1);
+                       fvals_stall(end,1) = opt_fval;
+                   end
+                   if i >= opts.MaxStallIterations
+                       I = ~isnan(fvals_stall) & ~isinf(fvals_stall);
+                       fvals_stall = fvals_stall(I);
+                       if any(I)
+                           rel_change = abs((max(fvals_stall) - min(fvals_stall))/mean(fvals_stall));
+                           fprintf_("Relative Change: %f\n", rel_change);
+                           if rel_change < opts.FunctionTolerance
+                               fprintf_("Relative change %f over %d iterations is less than the FunctionTolerance %f.  Terminating search.\n\n",rel_change,opts.MaxStallIterations,opts.FunctionTolerance);
+                               terminate = true;
+                           end
                        end
                    end
                end
@@ -915,9 +920,10 @@ classdef Optimization < handle
         function gao = DiscreteGA(obj, opts)
             arguments
                 obj
-                opts.GAOpts cell = {};
+                opts.GAOpts cell = {'MaxStallGenerations',Inf,'MaxGenerations',300};
                 opts.EnforceBounds = true;
                 opts.Counter = Counter();
+                opts.FunctionThreshold double = -Inf;
             end
             counter = opts.Counter;
             gao = GAOutput();
@@ -939,14 +945,16 @@ classdef Optimization < handle
             ub = N_comps;
             IntCon = 1:N_comp_types;
             
-            gaopts = optimoptions('ga','PlotFcn',{'gaplotbestf', 'gaplotbestindiv'});
+            gaopts = optimoptions('ga','PlotFcn',{'gaplotbestf', 'gaplotbestindiv'}, 'OutputFcn', @ga_outfun);
             gaopts = optimoptions(gaopts, opts.GAOpts{:});
             
             [X_opt,f_opt,exitflag,output,population,scores] = ga(@objfun_local,nvars,[],[],[],[],lb,ub,@nlcon_local,IntCon,gaopts);
             opt_comb = getComb(X_opt);
             
             % Set QR to Optimal Combination
-            [~,~, pmod] = evalCombination(opt_comb);
+            [~,~, pmod] = evalCombination(opt_comb, X_opt);
+            
+            clear evalCombination; % Clears persistent X_prev variable
             
             gao.Objective = class(obj.Objective);
             gao.X_opt = X_opt;
@@ -959,18 +967,34 @@ classdef Optimization < handle
             gao.scores = scores;
             gao.Counter = counter;
             
+            function [state,options,optchanged] = ga_outfun(options,state,flag)
+                optchanged = false;
+                switch flag
+                    case 'init'
+                    case 'iter'
+                        if state.Best(end) <= opts.FunctionThreshold
+                            disp(state.Best(end))
+                            state.StopFlag = 'FunctionThreshold';
+                        end
+                    case 'done'
+                end
+                
+            end
+            
             function f = objfun_local(X)
                 comb = getComb(X);
-                [f,~] = evalCombination(comb);
+                [f,~] = evalCombination(comb,X);
             end
             
             function [c,ceq] = nlcon_local(X)
                 comb = getComb(X);
-                [~,c] = evalCombination(comb);
+                [~,c] = evalCombination(comb,X);
                 ceq = [];
             end
             
-            function [fval, c, pmod] = evalCombination(comb)
+            function [fval, c, pmod] = evalCombination(comb, X)
+                persistent X_prev
+                
                 cpv = vertcat(comb.Data);
                 
                 % Load Values into Parameters
@@ -981,11 +1005,15 @@ classdef Optimization < handle
                 dep_cache = setDependent(pmod, false); % Makes each element of pmod independent
                 
                 % Update QuadRotor
-                try
-                    updateQR(obj, true, counter);
-                    valid = true;
-                catch
-                    valid = false;
+                valid = true;
+                if isempty(X_prev) || any(X ~= X_prev)
+                    try
+                        updateQR(obj, false, counter);
+                        X_prev = X;
+                    catch
+                        valid = false;
+                        X_prev = [];
+                    end
                 end
                                 
                 % Evaluate and Store Objective Function
@@ -1003,6 +1031,17 @@ classdef Optimization < handle
                 for i = 1:N_comp_types
                     comb(i) = cd_cell{i}(X(i));
                 end
+            end
+        end
+        function gao_array = DiscreteGAMultiStart(obj, N, opts)
+            arguments
+                obj
+                N uint8
+                opts cell = {}
+            end
+            for i = 1:N
+                obj.resetQR();
+                gao_array(i) = DiscreteGA(obj, opts{:});
             end
         end
     end

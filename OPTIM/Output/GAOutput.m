@@ -4,7 +4,7 @@ classdef GAOutput < DiscreteOutput
     
     properties        
         exitflag
-        outptut
+        output
         population
         scores
     end
