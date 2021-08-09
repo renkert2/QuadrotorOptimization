@@ -60,9 +60,12 @@ classdef Optimization < handle
             storeDependentDefault(obj.DependentParams);
         end
         
-        function f_ = objfun(obj, success_flag)
+        function [f_] = objfun(obj, success_flag, counter)
             if nargin == 1
                 success_flag = true;
+            end
+            if nargin == 3
+                counter.increment("objfun");
             end
             if success_flag
                 f_ = f(getEnabled(obj.Objective), obj.QR);
@@ -72,9 +75,12 @@ classdef Optimization < handle
             % implement objective function scaling at some point
         end
 
-        function [c,ceq] = nlcon(obj, success_flag)
+        function [c,ceq] = nlcon(obj, success_flag, counter)
             if nargin == 1
                 success_flag = true;
+            end
+            if nargin == 3
+                counter.increment("nlcon");
             end
             if success_flag
                 c = g(getEnabled(obj.Constraints), obj.QR);
@@ -84,7 +90,7 @@ classdef Optimization < handle
             ceq = [];
         end
         
-        function updateQR(obj, check_prev)
+        function updateQR(obj, check_prev, counter)
             if check_prev
                 X = [obj.OptiVars.Value];
                 if ~isempty(obj.X_prev) && all(X == obj.X_prev)
@@ -92,7 +98,9 @@ classdef Optimization < handle
                 end
                 obj.X_prev = X;
             end
-            
+            if nargin == 3
+                counter.increment("update");
+            end
             obj.QR.update();
         end
         
@@ -258,16 +266,12 @@ classdef Optimization < handle
                 opts.InitWeights (1,2) double = [1 0]
                 opts.CaptureState logical = true
                 opts.CheckPrevious logical = true
-                opts.Timer logical = true
+                opts.Counter Counter = Counter()
                 opts.PlotDesignSpace logical = true
                 opts.PlotGradient logical = false
                 opts.DesignSpaceParent DesignSpacePlot = DesignSpacePlot.empty()
             end
             
-            if opts.Timer
-                timer = tic;
-            end
-                        
             setDependent(obj.DependentParams, true);
             obj.updateQR(false);
             
@@ -339,39 +343,39 @@ classdef Optimization < handle
          
             % Set Current Values to Optimal Value in OptiVars
             setVals(obj.OptiVars, X_opt_s);
-            obj.updateQR(true);
+            obj.updateQR(true, counter);
             OO.X_opt = unscale(obj.OptiVars);
             
             % Get optimal ParamVals to load later or for discrete search
             OO.ParamVals = getValues(filterEnabled(obj.OptiVars, "Child"));
+            
+            OO.Counter = counter;
             
             if opts.CaptureState
                 OO.PerformanceData = obj.QR.PerformanceData;
                 OO.DesignData = obj.QR.DesignData;
             end
             
-            if opts.Timer
-                OO.OptimTime = seconds(toc(timer));
-            end
-            
             function f = objfun_local(X_s)
                 setVals(obj.OptiVars, X_s);
                 try
-                    obj.updateQR(opts.CheckPrevious);
-                    f = objfun(obj, true);
+                    obj.updateQR(opts.CheckPrevious, counter);
+                    [f] = objfun(obj, true);
                 catch
-                    f = objfun(obj, false);
+                    [f] = objfun(obj, false);
                 end
+                counter.increment("objfun");
             end
             
             function [c,ceq] = nlcon_local(X_s)
                 setVals(obj.OptiVars, X_s);
                 try
-                    obj.updateQR(opts.CheckPrevious);
+                    obj.updateQR(opts.CheckPrevious, counter);
                     [c,ceq] = nlcon(obj);
                 catch
                     [c,ceq] = nlcon(obj);
                 end
+                counter.increment("nlcon");
             end
             
             function stop = plotFcnBoundary(~,~,state)
@@ -562,7 +566,7 @@ classdef Optimization < handle
         %% Discrete Optimization
         function so = Search(obj, target_arg, N_max_search, N_max_comb, opts)
             % CAUTION: This only works if all components of the same Type
-            % have the same parameter values.  Need to add additional 
+            % have the same parameter values (e.x. all propellers are identical).  Need to add additional 
             % Functionality if there are two components of the same type with 
             % different parameter values.  
             
@@ -576,23 +580,31 @@ classdef Optimization < handle
                 opts.DistanceMode string = "Norm" % Options: "Norm", "WeightedNorm"
                 opts.Weights = []
                 opts.Display logical = false
+                opts.DisplayEvaluations logical = false;
                 opts.Plot logical = false
-                opts.Timer logical = true
+                opts.Counter Counter = Counter()
+                
+                % Termination Criteria
+                opts.MaxStallIterations = Inf;
+                opts.FunctionTolerance = 1e-6;
+                opts.FunctionThreshold = -Inf; % Value at or below which the search terminates.  Useful for comparing algorithms. 
             end
-            
-            if opts.Timer
-                timer = tic;
-            end
+            counter = opts.Counter;
             
             opti_var_vals = getValues(filterEnabled(obj.OptiVars, "Child"));
             if ~isempty(target_arg)
-                if isa(target_arg, 'OptimOutput')
+                if isa(target_arg, 'ContinuousOutput')
                     target = target_arg.ParamVals;
-                elseif isa(target_arg, 'compParamVal')
+                elseif isa(target_arg, 'compParamValue')
                     target = target_arg;
                 end
             else
                 target = opti_var_vals;
+            end
+            
+            if opts.Display
+                disp("Target set to:")
+                disp(table(target));
             end
 
             % Get Initial component sets based on distance from optimal
@@ -601,6 +613,11 @@ classdef Optimization < handle
                 lb = filterEnabled(obj.OptiVars,"lb");
                 ub = filterEnabled(obj.OptiVars,"ub");
                 cd = filterBounds(obj.CD, opti_var_vals, lb, ub);
+                if opts.Display
+                    N_i = numel(obj.CD);
+                    N_f = numel(cd);
+                    fprintf("Bounds Enforced. Removed %d elements from initial %d element ComponentData array. \n\n", N_i - N_f, N_i);
+                end
             else
                 cd = obj.CD;
             end
@@ -609,6 +626,7 @@ classdef Optimization < handle
             
             if opts.SortMode == "Distance" || opts.SortMode == "Objective"
                 [cd_cell,d,comp_names] = filterNearest(cd, target, N_max_search, 'DistanceMode', opts.DistanceMode, 'Weights', opts.Weights);
+                fprintf_("Filtered %d components by distance from target using '' %s '' distance mode \n\n",N_max_search, opts.DistanceMode);
             else
                 [cd_cell, comp_names] = separateComponents(cd, target);
             end
@@ -625,7 +643,7 @@ classdef Optimization < handle
                     d_objective_comp = NaN(N_comps, 1);
                     for j = 1:N_comps
                         % Evaluate Objective
-                        [fval, ~] = evalCombination(obj, comps(j), opts.Display);
+                        [fval, ~] = evalCombination(obj, comps(j));
                         d_objective_comp(j) = fval;
                         % Reset QR
                         loadValues(obj.QR.Params, oopv_cache);
@@ -637,6 +655,9 @@ classdef Optimization < handle
                 
                 d = d_sorted;
                 cd_cell = cd_sorted;
+                
+                disp_("Evaluated individual components by evaluation of objective function after substitution into target.  Current counter state is:")
+                disp_(counter)
             end
             
             % Apply second N_max here if necessary to reduce number of
@@ -676,6 +697,8 @@ classdef Optimization < handle
                 
             % Apply N_max_comb to restrict total number of combinations
             N_combs = min(size(comb_array, 1), N_max_comb);
+            fprintf_("Restricted component combination list to %d.  Current length of list is %d \n", N_max_comb, N_combs); 
+            
             R = 1:N_combs;
             comb_array = comb_array(R,:);
             if opts.SortMode == "Distance" || opts.SortMode == "Objective"
@@ -731,22 +754,21 @@ classdef Optimization < handle
             end
 
             fvals = NaN(N_combs, 1);
+            fvals_stall = NaN(opts.MaxStallIterations,1);
             for i = 1:N_combs
                comb = comb_array(i,:); % Array of ComponentData objects
                
-               if opts.Display
-                    fprintf("Evaluating Configuration: %d\n", i)
-               end
+               fprintf_("Evaluating Configuration: %d\n", i)
                
-               [fvals(i,1), ~] = evalCombination(obj, comb, opts.Display);
+               [fvals(i,1), ~] = evalCombination(obj, comb);
                
                % update optimal configuration
                [opt_fval, opt_i] = min(fvals);
-               opt_comb = comb_array(opt_i,:);
-               if opts.Display
-                   fprintf("Current Optimal: I = %d, Objective Function: %f\n", opt_i, opt_fval);
+               if opt_i == i
+                   opt_comb = comb_array(opt_i,:);
+                   opt_cnt = getState(counter);
                end
-               
+               fprintf_("Current Optimal: I = %d, Objective Function: %f\n", opt_i, opt_fval);
                
                if opts.Plot
                    % Update Points
@@ -769,6 +791,36 @@ classdef Optimization < handle
                    drawnow
                end
                
+               % Termination
+               terminate = false;
+               if opt_fval <= opts.FunctionThreshold
+                   disp_("Function threshold satsified.  Terminating search.")
+                   terminate = true;
+               end
+               
+               if i <= opts.MaxStallIterations
+                   fvals_stall(i) = opt_fval;
+               else
+                   fvals_stall = circshift(fvals_stall,-1,1);
+                   fvals_stall(end,1) = opt_fval;
+               end
+               if i >= opts.MaxStallIterations
+                   I = ~isnan(fvals_stall) & ~isinf(fvals_stall);
+                   fvals_stall = fvals_stall(I);
+                   if any(I)
+                       rel_change = abs((max(fvals_stall) - min(fvals_stall))/mean(fvals_stall));
+                       fprintf_("Relative Change: %f\n", rel_change);
+                       if rel_change < opts.FunctionTolerance
+                           fprintf_("Relative change %f over %d iterations is less than the FunctionTolerance %f.  Terminating search.\n\n",rel_change,opts.MaxStallIterations,opts.FunctionTolerance);
+                           terminate = true;
+                       end
+                   end
+               end
+               
+               if terminate
+                   fvals = fvals(1:i,1);
+                   break
+               end
             end
             
             % Sort component configurations from best to worst
@@ -781,10 +833,8 @@ classdef Optimization < handle
             end
             
             % Set QuadRotor to Optimal Configuration
-            if opts.Display
-                disp("Final Configuration: ")
-            end
-            [~,pmod] = evalCombination(obj, opt_comb, opts.Display);
+            disp_("Final Configuration: ")
+            [~,pmod] = evalCombination(obj, opt_comb);
             % All of pmod currently independent.
             
             sorted_FVals = f2val(obj.Objective, sorted_fvals);
@@ -803,15 +853,15 @@ classdef Optimization < handle
             so.ComponentNames = comp_names;
             so.DistanceMode = opts.DistanceMode;
             so.SortMode = opts.SortMode;
-            if opts.Timer
-                so.SearchTime = seconds(toc(timer));
-            end
+            so.Counter = counter;
+            so.OptimalCounterState = opt_cnt;
+            
             if opts.SortMode == "Distance" || opts.SortMode == "Objective"
                 so.SortedDistances = sorted_distances;
                 so.NormalizedDistances = normalized_distances;
             end
             
-            function [fval, pmod] = evalCombination(obj, comb, dispflag)
+            function [fval, pmod] = evalCombination(obj, comb)
                 cpv = vertcat(comb.Data);
                 
                 % Load Values into Parameters
@@ -823,7 +873,7 @@ classdef Optimization < handle
                 
                 % Update QuadRotor
                 try
-                    updateQR(obj, false);
+                    updateQR(obj, false, counter);
                     valid = true;
                 catch
                     valid = false;
@@ -831,33 +881,47 @@ classdef Optimization < handle
                 
                 % Check Constraints
                 if valid
-                    [c,~] = nlcon(obj);
+                    [c,~] = nlcon(obj, valid, counter);
                     if any(c > 1e-6) % Constraint tolerance of continuous optimization solution
                         valid = false;
                     end
                 end
                 
                 % Evaluate and Store Objective Function
-                fval = objfun(obj, valid);
+                fval = objfun(obj, valid, counter);
                 
-                               
-               % Restore Dependency of Modified Parameters before returning
+                
+                % Restore Dependency of Modified Parameters before returning
                 setDependent(pmod, dep_cache);
-                
-                if dispflag
-                    disp("Configuration:");
-                    disp(summaryTable(comb))
-                    fprintf("Objective Function Value: %f\n\n", fval);
-                end 
+                if opts.DisplayEvaluations
+                    disp_("Configuration:");
+                    disp_(summaryTable(comb))
+                    fprintf_("Objective Function Value: %f\n\n", fval);
+                end
+            end
+
+            function disp_(varargin)
+                if opts.Display
+                    disp(varargin{:});
+                end
+            end
+            
+            function fprintf_(varargin)
+                if opts.Display
+                    fprintf(varargin{:});
+                end
             end
         end
-        
         function gao = DiscreteGA(obj, opts)
             arguments
                 obj
                 opts.GAOpts cell = {};
                 opts.EnforceBounds = true;
+                opts.Counter = Counter();
             end
+            counter = opts.Counter;
+            gao = GAOutput();
+            gao.F0 = obj.Objective.Value(obj.QR);
             
             opti_var_vals = getValues(filterEnabled(obj.OptiVars, "Child"));
             if opts.EnforceBounds
@@ -884,17 +948,16 @@ classdef Optimization < handle
             % Set QR to Optimal Combination
             [~,~, pmod] = evalCombination(opt_comb);
             
-            gao = struct();
-            gao.Objective = obj.Objective;
+            gao.Objective = class(obj.Objective);
             gao.X_opt = X_opt;
             gao.OptimalConfiguration = opt_comb;
             gao.ModifiedParameters = pmod;
-            gao.f_opt = f_opt;
             gao.F_opt = f2val(obj.Objective, f_opt);
             gao.exitflag = exitflag;
             gao.output = output;
             gao.population = population;
             gao.scores = scores;
+            gao.Counter = counter;
             
             function f = objfun_local(X)
                 comb = getComb(X);
@@ -919,17 +982,17 @@ classdef Optimization < handle
                 
                 % Update QuadRotor
                 try
-                    updateQR(obj, true);
+                    updateQR(obj, true, counter);
                     valid = true;
                 catch
                     valid = false;
                 end
                                 
                 % Evaluate and Store Objective Function
-                fval = objfun(obj, valid);
+                fval = objfun(obj, valid, counter);
                 
                 % Evaluate Constraint Function
-                [c,~] = nlcon(obj, valid);
+                [c,~] = nlcon(obj, valid, counter);
                      
                % Restore Dependency of Modified Parameters before returning
                 setDependent(pmod, dep_cache);
