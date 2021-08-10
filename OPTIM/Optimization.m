@@ -271,7 +271,7 @@ classdef Optimization < handle
                 opts.PlotGradient logical = false
                 opts.DesignSpaceParent DesignSpacePlot = DesignSpacePlot.empty()
             end
-            
+            counter = opts.Counter;
             setDependent(obj.DependentParams, true);
             obj.updateQR(false);
             
@@ -364,7 +364,7 @@ classdef Optimization < handle
                 catch
                     [f] = objfun(obj, false);
                 end
-                counter.increment("objfun");
+                increment(counter, "objfun");
             end
             
             function [c,ceq] = nlcon_local(X_s)
@@ -375,7 +375,7 @@ classdef Optimization < handle
                 catch
                     [c,ceq] = nlcon(obj);
                 end
-                counter.increment("nlcon");
+                increment(counter, "nlcon");
             end
             
             function stop = plotFcnBoundary(~,~,state)
