@@ -591,6 +591,7 @@ classdef Optimization < handle
             end
             counter = opts.Counter;
             
+            % Define Target: Defaults to current OptiVar Values
             opti_var_vals = getValues(filterEnabled(obj.OptiVars, "Child"));
             if ~isempty(target_arg)
                 if isa(target_arg, 'ContinuousOutput')
@@ -607,9 +608,10 @@ classdef Optimization < handle
                 disp(table(target));
             end
 
-            % Get Initial component sets based on distance from optimal
-            % point
             if opts.EnforceBounds
+                % Modify ComponentData array so that all components satisfy
+                % upper and lower bounds of the design variables
+                
                 lb = filterEnabled(obj.OptiVars,"lb");
                 ub = filterEnabled(obj.OptiVars,"ub");
                 cd = filterBounds(obj.CD, opti_var_vals, lb, ub);
@@ -633,7 +635,7 @@ classdef Optimization < handle
             
             setDependent(obj.DependentParams, true); % We want to make sure that any parameter values we don't suppy are handled by the surrogate models
             if opts.SortMode == "Objective"
-                loadValues(obj.QR.Params, target); % Set QR Parameters to the optimal target design
+                loadValues(obj.QR.Params, target); % Set QR Parameters to the target design
                 oopv_cache = getValues(obj.QR.Params); % Cache QuadRotor Parameters
                 d_sorted = cell(size(cd_cell));
                 cd_sorted = cell(size(cd_cell));
@@ -645,7 +647,7 @@ classdef Optimization < handle
                         % Evaluate Objective
                         [fval, ~] = evalCombination(obj, comps(j));
                         d_objective_comp(j) = fval;
-                        % Reset QR
+                        % Reset QR to the target design
                         loadValues(obj.QR.Params, oopv_cache);
                     end
                     [d_objective_comp_sorted, I] = sort(d_objective_comp);
@@ -699,12 +701,13 @@ classdef Optimization < handle
             N_combs = min(size(comb_array, 1), N_max_comb);
             fprintf_("Restricted component combination list to %d.  Current length of list is %d \n", N_max_comb, N_combs); 
             
-            R = 1:N_combs;
-            comb_array = comb_array(R,:);
-            if opts.SortMode == "Distance" || opts.SortMode == "Objective"
-                comb_d = comb_d(R,:);
-            end
-            comb_I = comb_I(R,:);
+            % Delete this if there aren't any errors
+%             R = 1:N_combs;
+%             comb_array = comb_array(R,:);
+%             if opts.SortMode == "Distance" || opts.SortMode == "Objective"
+%                 comb_d = comb_d(R,:);
+%             end
+%             comb_I = comb_I(R,:);
             
             if opts.Plot
                 figure('Name', 'Nearest Neighbor Search')
@@ -825,6 +828,8 @@ classdef Optimization < handle
                if terminate
                    fvals = fvals(1:i,1);
                    break
+               elseif i == N_combs
+                   fprintf_("Maximum number of combinations reached at %d", N_combs)
                end
             end
             
