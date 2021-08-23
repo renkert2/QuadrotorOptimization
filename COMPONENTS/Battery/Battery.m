@@ -62,6 +62,7 @@ classdef Battery < Component
         end
         
         function set.OperatingSOCRange(obj,val)
+            assert(val(1) < val(2), "SOC range defined as [Min SOC, Max SOC]");
             obj.OperatingSOCRange = val;
             calcAveraged_SOC(obj);
         end

@@ -256,6 +256,11 @@ classdef FlightLog < handle
         VehicleMass double % Mass of vehicle, All components including battery and frame
     end
     
+    properties (Hidden)
+       BattNs double
+       BattCapacity double
+    end
+    
     methods
         function obj = FlightLog(file, CD)
             s = load('LiPo_42V_Lookup.mat', 'LiPo_42V_Lookup');
@@ -440,15 +445,15 @@ classdef FlightLog < handle
         end
         
         function q = setSOCCurve(obj)
- 
-            
             % Based on V vs. SOC Curve
              bat = obj.Data.BAT;
              v = bat.VoltCorr;
              
              batt_data = filterComponent(obj.Components, "Battery").Data;
              batt_n_s = filterSym(batt_data, "N_s").Value;
+             obj.BattNs = batt_n_s;
              batt_cap = filterSym(batt_data, "Q").Value;
+             obj.BattCapacity = batt_cap;
              
              
              q = interp1(obj.BatteryLookup.V_OCV * batt_n_s, obj.BatteryLookup.SOC, v, 'pchip', 'extrap');
@@ -545,6 +550,7 @@ classdef FlightLog < handle
 %             
 %             batt_voltage_filt = batt_volt_rest_est / batt_volt_max;
 %             lift_max = batt_voltage_filt .* (1 - e) + e .* batt_voltage_filt .* batt_voltage_filt;
+
             batt_voltage_filt = 1;
             lift_max = 1;
 
@@ -634,6 +640,45 @@ classdef FlightLog < handle
             adat = adat(I_act,:);
             
             ts = timeseries(adat, seconds(t));
+        end
+        
+        function ave_current = calcAverageCurrent(obj)
+            t = obj.Data.BAT.Time;
+            [t, I_act] = obj.time2ActiveTime(t);
+            t = seconds(t(I_act));
+            ave_current = mean(obj.Data.BAT.CurrCorr(I_act)); 
+        end
+        
+        function ft_max = calcMaxFlightTime(obj, final_soc)
+            % Caution: This won't be very accurate since current increases
+            % as function of SOC
+            if numel(obj) == 1
+                ft_max = calcMaxFlightTime_(obj, final_soc);
+            else
+                for i = 1:numel(obj)
+                    ft_max(i,1) = calcMaxFlightTime_(obj(i), final_soc);
+                end
+            end
+            
+            function ft_max = calcMaxFlightTime_(obj, final_soc)
+                % Average Current
+                t = obj.Data.BAT.Time;
+                [t, I_act] = obj.time2ActiveTime(t);
+                t = seconds(t(I_act));
+                q = obj.Data.BAT.SOCCurrCorr(I_act); % Could also use raw, uncorrected SOC here if we want to remove the voltage curve variable
+                
+                if final_soc >= obj.EndingSOC
+                    ft_max = interp1(q,t,final_soc);
+                else
+                    warning("Extrapolating Flight Time")
+                    act_curr = obj.Data.BAT.CurrCorr(I_act);
+                    ave_current = mean(act_curr(end-200:end-100));
+                    ft_max = ((obj.BattCapacity / 1000 * (1 - final_soc))/ave_current)*(60^2); % s
+                    
+                end
+                ft_max = seconds(ft_max);
+                ft_max.Format = 'hh:mm:ss';
+            end
         end
     end
     
