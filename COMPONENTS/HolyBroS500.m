@@ -52,7 +52,7 @@ classdef HolyBroS500 < QuadRotor
                 'R_s', compParam('R_s', .004, 'Unit', "Ohm", 'AutoRename', true, 'Tunable', true),... % Measured with Battery Charger, likely not very accurate.  R_s = N_p/N_s R_p
                 'Mass', extrinsicProp('Mass', 0.47735, 'Unit',"kg", 'AutoRename', true, 'Tunable', true),...
                 'Price', extrinsicProp('Price', 59.99, 'Unit', "USD", 'AutoRename', true, 'Tunable', false));
-            batt.OperatingSOCRange = [0.2 1];
+            batt.OperatingSOCRange = [0.5 1];
             
             %% DC Bus
             bus = DCBus_CurrentEquivalence('Name', 'DCBus',...
@@ -103,7 +103,8 @@ classdef HolyBroS500 < QuadRotor
             obj.Params.update();
             
             %% General
-            obj.MaxPropDiameter = 0.356; % m, used for in Optimization algorithm
+            %obj.MaxPropDiameter = 0.356; % m, used for in Optimization algorithm
+            obj.MaxPropDiameter = 0.3048;
             obj.Height = 0.1; % Approximate Height of the quadrotor in m, used to estimate drag
             obj.DragCoefficient = 1.2;
         end
