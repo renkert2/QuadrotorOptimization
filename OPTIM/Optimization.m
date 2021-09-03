@@ -4,8 +4,11 @@ classdef Optimization < handle
         OptiVars (:,1) optiVar
         DependentParams (:,1) compParam
         
-        Objective OptiFunctions.Parents.Function = OptiFunctions.FlightTimePerPrice();
+        Objective OptiFunctions.Parents.Function = OptiFunctions.FlightTime();
         Constraints OptiFunctions.Parents.Function = [OptiFunctions.BatteryBoundary; OptiFunctions.MotorBoundary; OptiFunctions.PropellerBoundary; OptiFunctions.InputConstraint]        
+    end
+    
+    properties (Dependent)
         CD ComponentData % ComponentDatabase 
     end
     
@@ -15,18 +18,8 @@ classdef Optimization < handle
     end
     
     methods
-        function obj = Optimization(qr, cd)
-            if nargin == 1
-                bcd = qr.PT.Battery.Surrogate.FilteredCD;
-                mcd = qr.PT.Motor.Surrogate.FilteredCD;
-                pcd = qr.PT.Propeller.Surrogate.CD.FilteredCD;
-                cd = [bcd; pcd; mcd];
-            end
-            
+        function obj = Optimization(qr)
             obj.QR = qr;
-            obj.X0Params = getValues(qr.Params);
-            obj.CD = cd;
-
             obj.init();
         end
         
@@ -45,6 +38,11 @@ classdef Optimization < handle
 
             obj.OptiVars = OV';
             
+            % Manually modify aerodynamic cofficients to match APC Data
+            obj.QR.PT.Propeller.k_P_mod.Value = 1.25;
+            obj.QR.PT.Propeller.k_T_mod.Value = 0.85;
+            obj.X0Params = getValues(obj.QR.Params);
+            
             % Enable Dependencies
             obj.DependentParams = [...
                 batt.R_s;
@@ -58,6 +56,14 @@ classdef Optimization < handle
                 prop.Mass;
                 prop.Price;];
             storeDependentDefault(obj.DependentParams);
+        end
+        
+        function cd = get.CD(obj)
+            qr = obj.QR;
+            bcd = qr.PT.Battery.Surrogate.FilteredCD;
+            mcd = qr.PT.Motor.Surrogate.FilteredCD;
+            pcd = qr.PT.Propeller.Surrogate.CD.FilteredCD;
+            cd = [bcd; pcd; mcd];
         end
         
         function [f_] = objfun(obj, success_flag, counter)
@@ -664,7 +670,6 @@ classdef Optimization < handle
             
             % Apply second N_max here if necessary to reduce number of
             % combinations to evaluate
-            
             [comb_array,comb_I] = combinations(cd_cell{:});
             sz = size(comb_array);
             

@@ -10,15 +10,18 @@ classdef StaticModelValidation < handle
     methods
         function init(obj)
             obj.setPairs;
-            
+        end
+        
+        function setModelParams(obj)
+            % Load Parameters
+            loadValues(obj.QR.Params, obj.FL.Components);
+            obj.QR.update()
+        end
+        
+        function setTestConditions(obj)
             % Set Operating Conditions
             flight_data = obj.FL;
             obj.QR.PT.Battery.OperatingSOCRange = [flight_data.EndingSOC, flight_data.StartingSOC];
-            
-            % Load Parameters
-            loadValues(obj.QR.Params, obj.FL.Components);
-            
-            obj.QR.update()
         end
                     
         function flightTime(obj)
