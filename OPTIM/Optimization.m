@@ -4,7 +4,7 @@ classdef Optimization < handle
         OptiVars (:,1) optiVar
         DependentParams (:,1) compParam
         
-        Objective OptiFunctions.Parents.Function = OptiFunctions.FlightTime();
+        Objective OptiFunctions.Parents.Function = OptiFunctions.FlightTimePerPrice();
         Constraints OptiFunctions.Parents.Function = [OptiFunctions.BatteryBoundary; OptiFunctions.MotorBoundary; OptiFunctions.PropellerBoundary; OptiFunctions.InputConstraint]        
     end
     
@@ -32,16 +32,12 @@ classdef Optimization < handle
             OV(1) = optiVar(prop.D, prop.Fit.Boundary.X_lb(1), min(prop.Fit.Boundary.X_ub(1), obj.QR.MaxPropDiameter));
             OV(2) = optiVar(prop.P, prop.Fit.Boundary.X_lb(2), prop.Fit.Boundary.X_ub(2));            
             OV(3) = optiVar(batt.N_s, batt.Fit.Boundary.X_lb(1),batt.Fit.Boundary.X_ub(1)); % Typically voltage is selected to highest possible value           
-            %OV(4) = optiVar(batt.Q, batt.Fit.Boundary.X_lb(2),batt.Fit.Boundary.X_ub(2));
-            OV(4) = optiVar(batt.Q, batt.Fit.Boundary.X_lb(2),5000);
+            OV(4) = optiVar(batt.Q, batt.Fit.Boundary.X_lb(2),batt.Fit.Boundary.X_ub(2));
             OV(5) = optiVar(motor.kV, motor.Fit.Boundary.X_lb(1), motor.Fit.Boundary.X_ub(1));
             OV(6) = optiVar(motor.Rm, motor.Fit.Boundary.X_lb(2), motor.Fit.Boundary.X_ub(2));
 
             obj.OptiVars = OV';
-            
-            % Manually modify aerodynamic cofficients to match APC Data
-            obj.QR.PT.Propeller.k_P_mod.Value = 1.25;
-            obj.QR.PT.Propeller.k_T_mod.Value = 0.85;
+
             obj.X0Params = getValues(obj.QR.Params);
             
             % Enable Dependencies
@@ -279,6 +275,11 @@ classdef Optimization < handle
                 opts.DesignSpaceParent DesignSpacePlot = DesignSpacePlot.empty()
             end
             counter = opts.Counter;
+            
+            OO = OptimOutput();
+            OO.F0 = obj.Objective.Value(obj.QR);
+            
+            % Switch into Continuous Mode
             setDependent(obj.DependentParams, true);
             obj.updateQR(false);
             
@@ -308,11 +309,9 @@ classdef Optimization < handle
             lb = LB(obj.OptiVars);
             ub = UB(obj.OptiVars);
             
-            OO = OptimOutput();
             OO.Objective = class(obj.Objective);
             OO.SolverFunction = opts.SolverFunction;
             
-            OO.F0 = obj.Objective.Value(obj.QR);
             qr_con_in_cache = obj.QR.PT.SimpleModel.ConstrainInput; % Save previous state of QR.ConstrainInput
             obj.QR.PT.SimpleModel.ConstrainInput = false; % Hand input constraint to optimization solver
             
@@ -398,12 +397,12 @@ classdef Optimization < handle
                         else
                             d = opts.DesignSpaceParent;
                         end
-                        d.addMarker();
+                        d.addStartMarker();
                     case 'iter'
                         % Make updates to plot or guis as needed
                         d.update();
                     case 'done'
-                        d.addMarker();
+                        d.addEndMarker();
                 end
             end
             
@@ -467,6 +466,9 @@ classdef Optimization < handle
         end
         
         function [oo,range] = EpsilonConstraint(obj, constraint, property, range)
+            % Constraint: OptiFunction to be varied
+            % Property: Property of constraint to be varied (e.g. UB or LB)
+            
             con_cache = obj.Constraints;
             obj.Constraints = [obj.Constraints; constraint];
             

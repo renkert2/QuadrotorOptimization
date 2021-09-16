@@ -11,6 +11,8 @@ classdef DesignSpacePlot < handle
         T matlab.graphics.layout.TiledChartLayout
         DataChildren matlab.graphics.chart.primitive.Line
         DataMarkers matlab.graphics.chart.primitive.Line
+        StartMarker matlab.graphics.chart.primitive.Line
+        EndMarker matlab.graphics.chart.primitive.Line
         Fits
     end
     
@@ -32,25 +34,42 @@ classdef DesignSpacePlot < handle
             obj.Fits = fits;
             for i = 1:numel(fits)
                 nexttile(obj.T,i)
-                [obj.DataChildren(i), obj.DataMarkers(i)] = plotFit(fits(i));
+                [obj.DataChildren(i), b, obj.StartMarker(i), obj.EndMarker(i)] = plotFit(fits(i));
                 title(comps(i));
             end
+            lg = legend([obj.DataChildren(1); b; obj.StartMarker(1); obj.EndMarker(1)], 'Orientation', 'Horizontal');
+            lg.Layout.Tile = 'South';
             
-            function [p,m] = plotFit(fit)
+            function [p,b,s,f] = plotFit(fit)
                 ax = plotBoundary(fit, fit.Inputs.Value);
                 
                 p = ax.Children(1);
                 p.LineStyle = '-';
+                p.Color = 'black';
                 p.Marker = '.';
                 p.MarkerSize = 5;
+                p.DisplayName = 'Iterations';
                 
-                m = matlab.graphics.chart.primitive.Line;
-                m.Parent = ax;
-                m.LineStyle = 'none';
-                m.Marker = 'o';
-                m.MarkerSize = 5;
-                m.MarkerEdgeColor = [0 1 0];
-                m.LineWidth = 2;
+                b = ax.Children(2);
+                b.DisplayName = 'Constraint';
+                
+                s = matlab.graphics.chart.primitive.Line;
+                s.Parent = ax;
+                s.LineStyle = 'none';
+                s.Marker = 'o';
+                s.MarkerSize = 5;
+                s.MarkerEdgeColor = [1 165/255 0];
+                s.LineWidth = 2;
+                s.DisplayName = 'Initial Point';
+                
+                f = matlab.graphics.chart.primitive.Line;
+                f.Parent = ax;
+                f.LineStyle = 'none';
+                f.Marker = 'o';
+                f.MarkerSize = 5;
+                f.MarkerEdgeColor = 'green';
+                f.LineWidth = 2;
+                f.DisplayName = 'Optimal Point';
             end
         end
         
@@ -67,18 +86,31 @@ classdef DesignSpacePlot < handle
             end
         end
         
-        function addMarker(obj)
+        function addStartMarker(obj)
             fields = ["XData", "YData", "ZData"];
             
-            for i = 1:numel(obj.DataMarkers)
+            for i = 1:numel(obj.StartMarker)
                 fit = obj.Fits(i);
-                child = obj.DataMarkers(i);
+                child = obj.StartMarker(i);
                 new_vals = [fit.Inputs.Value];
                 for j = 1:numel(new_vals)
                     child.(fields(j)) = [child.(fields(j)) new_vals(j)];
                 end
             end
-        end       
+        end 
+        
+        function addEndMarker(obj)
+            fields = ["XData", "YData", "ZData"];
+            
+            for i = 1:numel(obj.EndMarker)
+                fit = obj.Fits(i);
+                child = obj.EndMarker(i);
+                new_vals = [fit.Inputs.Value];
+                for j = 1:numel(new_vals)
+                    child.(fields(j)) = [child.(fields(j)) new_vals(j)];
+                end
+            end
+        end 
     end
 end
 
