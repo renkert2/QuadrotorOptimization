@@ -52,13 +52,28 @@ classdef QuadRotorSystem < handle
             obj.setSimOutDesc();
             
             obj.RefTraj = ReferenceTrajectory3D();
-            obj.RefTraj.Speed = 1;
             obj.RefTraj.Lemniscate('a',10, 'PotatoChipHeight', 2);
             obj.RefTraj.init();
-            obj.RefTraj.setTimeSeries(1);
-            obj.RefTrajTS = obj.RefTraj.TimeSeries;
+            obj.RefTraj.Speed = 5;
+            obj.RefTraj.Cycles = 1;
+            obj.RefTraj.setTimeSeries();
             
             obj.setLQR();
+            
+            obj.EnableStop = true;
+            sys_time = 2*obj.QR.FlightTime; % Maximum simulation time. Stop System block handles convergence or battery draining
+            set_param(obj.Name, 'StopTime', num2str(sys_time));
+        end
+        
+        function ts = get.RefTrajTS(obj)
+            ts = obj.RefTraj.TimeSeries;
+        end
+        
+        function update(obj)
+            update(obj.QR);
+            obj.setLQR();
+            sys_time = 2*obj.QR.FlightTime; % Maximum simulation time. Stop System block handles convergence or battery draining
+            set_param(obj.Name, 'StopTime', num2str(sys_time));
         end
         
         function qrso = Simulate(obj, opts)
@@ -105,7 +120,6 @@ classdef QuadRotorSystem < handle
             if nargin == 1
                 so = obj.SimOut;
             end
-            
             t = so.tout;
             y = get(so.yout, 'y_out').Values.Data;
             ax = obj.QR.BM.animate(t,y, 'RefTraj', obj.RefTraj);
@@ -170,14 +184,15 @@ classdef QuadRotorSystem < handle
             
             legend(names)
             title("Distance Error Over Time")
-            xlabel("$$t$$", 'Interpreter', 'latex')
-            ylabel("$$d$$ (m)", 'Interpreter', 'latex')
+            xlabel("Time $$t$$", 'Interpreter', 'latex')
+            ylabel("Norm of Error (m)", 'Interpreter', 'latex')
             
             nexttile
             
             barh(cum_errors)
             title("Integrated Error")
             yticklabels(names)
+            xlabel("Accumulated Error ($$m*s$$)",'Interpreter', 'latex');
             
         end
                     
@@ -186,6 +201,7 @@ classdef QuadRotorSystem < handle
                 so = obj.SimOut;
             end
             
+            so = so.Data;
             t = so.tout;
             target_trans = get(so.yout, 'r_out').Values.Data;
             trans = get(so.yout, 'y_out').Values.Data(:, obj.QR.BM.I.x.p);

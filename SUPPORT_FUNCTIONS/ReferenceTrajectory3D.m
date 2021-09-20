@@ -3,6 +3,7 @@ classdef ReferenceTrajectory3D < handle
     %   Detailed explanation goes here
     properties
         Speed double
+        Cycles double
     end
     
     properties (SetAccess = private)
@@ -100,12 +101,12 @@ classdef ReferenceTrajectory3D < handle
             setDerivatives(obj);
             setInterpolation(obj);
         end
-        
-        function ts = setTimeSeries(obj, cycles)
+
+        function ts = setTimeSeries(obj)
             arguments
                 obj
-                cycles double = 1
             end
+            cycles = obj.Cycles;
             t_single = obj.s/obj.Speed;
             delta = mean(diff(t_single));
             t = t_single;
