@@ -23,6 +23,11 @@ classdef ModelValidation < handle
             end
         end
         
+        function setModelParams(obj)
+            loadValues(obj.M.QR.Params, obj.FL.Components);
+            obj.M.QR.Params.update;
+        end
+        
         function setTestConditions(obj)
             flight_data = obj.FL;
             
@@ -105,7 +110,7 @@ classdef ModelValidation < handle
         function s = setPairs(obj)
             c = {"Bus Voltage", "V", {"PT_out", "Internal Voltage"}, {"BAT", "VoltCorr"};...
                 "Bus Current", "I", {"PT_out", "Internal Current"}, {"BAT", "CurrCorr"};...
-                "Battery SOC", "q", {"PT_out", "Battery SOC"}, {"BAT", ["SOCCurr"]};...
+                "Battery SOC", "q", {"PT_out", "Battery SOC"}, {"BAT", "SOCCurrCorr"};...
                 "Throttle", "u", {"u_out"}, {"RCOU", ["ESCUMean"]};...
                 "Height", "m", {"y_out", "Z Position"}, {"POS", "RelHomeAlt"};...
                 };

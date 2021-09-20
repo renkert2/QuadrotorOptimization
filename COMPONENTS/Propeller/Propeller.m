@@ -16,6 +16,9 @@ classdef Propeller < Component
         k_P compParam = compParam('k_P',  0.0411) % Power coefficient - k_P = 2*pi*k_Q, speed in rev/s
         k_T compParam = compParam('k_T', 0.0819) % Thrust coefficient - N/(s^2*kg*m^2), speed in rev/s.
         
+        k_P_mod compParam = compParam('k_P_mod', 1) % Used to adjust k_P based on experimental data
+        k_T_mod compParam = compParam('k_T_mod', 1) % Used to adjust k_T from experimental data
+        
         Mass extrinsicProp = extrinsicProp('Mass', 0.008, 'Unit', "kg")
         Price extrinsicProp = extrinsicProp('Price', NaN, 'Unit', "USD");
         J compParam = compParam('J', 2.1075e-05,'Unit', "kg*m^2") % Rotational Inertia - kg*m^2 from "Stabilization and Control of Unmanned Quadcopter (Jiinec)
@@ -30,7 +33,10 @@ classdef Propeller < Component
     end
     
     properties (SetAccess = private)
-       Fit paramFit
+       Surrogate PropellerSurrogate
+    end
+    properties (Dependent)
+        Fit paramFit
     end
     
     methods
@@ -55,17 +61,21 @@ classdef Propeller < Component
         end
         
         function init(obj)
-            load PropellerFit.mat PropellerFit;
-            PropellerFit.Inputs = [obj.D, obj.P];
-            PropellerFit.Outputs = [obj.k_P, obj.k_T, obj.Mass, obj.Price];
-            PropellerFit.setOutputDependency;
-            obj.Fit = PropellerFit;
+            ps = PropellerSurrogate();
+            ps.Fit.Inputs = [obj.D, obj.P];
+            ps.Fit.Outputs = [obj.k_P, obj.k_T, obj.Mass, obj.Price];
+            ps.Fit.setOutputDependency;
+            obj.Surrogate = ps;
             
             obj.J.setDependency(@Propeller.calcInertia, [obj.Mass, obj.D]);
             
-            obj.k_Q.setDependency(@Propeller.calcTorqueCoefficient, [obj.k_P]);
+            obj.k_Q.setDependency(@Propeller.calcTorqueCoefficient, [obj.k_P, obj.k_P_mod]);
             obj.K_Q.setDependency(@Propeller.calcLumpedTorqueCoefficient, [obj.k_Q, obj.rho, obj.D]);
-            obj.K_T.setDependency(@Propeller.calcLumpedThrustCoefficient, [obj.k_T, obj.rho, obj.D]);
+            obj.K_T.setDependency(@Propeller.calcLumpedThrustCoefficient, [obj.k_T, obj.k_T_mod, obj.rho, obj.D]);
+        end
+        
+        function f = get.Fit(obj)
+            f = obj.Surrogate.Fit;
         end
     end
     
@@ -92,8 +102,8 @@ classdef Propeller < Component
             J = 1/12*M.*D.^2;
         end
         
-        function k_Q = calcTorqueCoefficient(k_P)
-            k_Q = k_P / (2*pi);
+        function k_Q = calcTorqueCoefficient(k_P, k_P_mod)
+            k_Q = (k_P*k_P_mod) / (2*pi);
         end
         
         function K_Q = calcLumpedTorqueCoefficient(k_Q, rho, D)
@@ -101,8 +111,8 @@ classdef Propeller < Component
             K_Q = Propeller.convCoeffToRadPerSec(sdc); % rad/s
         end
         
-        function K_T = calcLumpedThrustCoefficient(k_T, rho, D)
-            stc = k_T*rho*D^4; % rev/s
+        function K_T = calcLumpedThrustCoefficient(k_T, k_T_mod, rho, D)
+            stc = (k_T*k_T_mod)*rho*D^4; % rev/s
             K_T = Propeller.convCoeffToRadPerSec(stc); % rad/s
         end
     end

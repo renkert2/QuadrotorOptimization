@@ -14,7 +14,6 @@ classdef SweepData
 
         I
         OO OptimOutput % Optimization Output
-        
         OO_opt OptimOutput
     end
     
@@ -53,31 +52,26 @@ classdef SweepData
             ylim(y_range);
             
             hold on
-            % NaN Highlighting
-             p1 = highlightGroups([isnan(y)], 'k');
-             set(p1, 'DisplayName', 'Infeasible Areas');
-            
+                        
             % Constraint Highlighting
             % Update later with OO.lamdaDesc
             
             s = lambdaData(obj.OO);
+            desc = [obj.OO_opt.lambdaDesc.ineqnonlin];
             active = s.ineqnonlin > 0;
+            colors = colororder;
             
-            p2 = highlightGroups(active(1,:),'m');
-            set(p2, 'DisplayName', 'Battery Constraint');
-            
-            p3 = highlightGroups(active(2,:),'b');
-            set(p3, 'DisplayName', 'Propeller Constraint');
-            
-            p4 = highlightGroups(active(3,:),'r');
-            set(p4, 'DisplayName', 'Motor Constraint');
-            
-            p5 = highlightGroups(active(4,:),'g');
-            set(p5, 'DisplayName', 'Input Constraint');
+            p = matlab.graphics.GraphicsPlaceholder.empty();
+            for j = 1:numel(desc)
+                p_local = highlightGroups(active(j,:),colors(j,:));
+                set(p_local, 'DisplayName', "Constraint: "+desc(j));
+                p = [p; p_local];
+            end
+            p_local = highlightGroups([isnan(y)], 'k');
+            set(p_local, 'DisplayName', 'Infeasible Areas');
+            p = [p;p_local];
             
             hold off
-            
-            p = [p1; p2; p3; p4; p5];
             
             function p = highlightGroups(index, color)
                 index(end) = false;
@@ -108,7 +102,8 @@ classdef SweepData
         
         function corrplot(obj_array)
             N = numel(obj_array);
-            t = tiledlayout(N, N);
+            f = figure();
+            t = tiledlayout(f, N, N);
             title(t,"Design Variable Coupling");
             t.TileSpacing = 'tight';
             t.Padding = 'compact';
@@ -162,8 +157,9 @@ classdef SweepData
         
         function [c,x,y] = correlate(obj_array, var1, var2)
             x = obj_array(var1).X;
-            dd_array = [obj_array(var1).DD.(obj_array(var2).Vars.Parent.Name)];
-            data = [dd_array.(obj_array(var2).Vars.Sym)];
+            dd_array = [obj_array(var1).OO.DesignData];
+            dd_array = [dd_array.(obj_array(var2).Vars.Child.Parent.Name)];
+            data = [dd_array.(obj_array(var2).Vars.Child.Sym)];
             y = processCatData(obj_array(var1), data);
             m = [x',y'];
             m = m(all(~isnan(m),2),:);

@@ -76,7 +76,7 @@ classdef HolyBroS500 < QuadRotor
                 'Rm', compParam('Rm',0.108, 'AutoRename', true, 'Tunable', true, 'Unit', "Ohm"),... % Estimate https://www.rcmoment.com/p-rm6909.html
                 'Price', extrinsicProp('Price', 19.90, 'Unit', "USD", 'AutoRename', true, 'Tunable', false));
             motor.J.Dependent = true; % Use the estimate function from PMSMMotor since we don't know the actual value
-            motor.kV.Value = 785; % Tuned from experimental values
+            %motor.kV.Value = 785; % Tuned from experimental values
             
             %% Propeller
             D = 10*(u.in/u.m);
@@ -85,6 +85,8 @@ classdef HolyBroS500 < QuadRotor
             prop = Propeller('Name', 'Propeller',...
                 'k_P', compParam('k_P',  NaN, 'AutoRename', true, 'Tunable', true) ,... % Power coefficient - k_P = 2*pi*k_Q, speed in rev/s
                 'k_T', compParam('k_T', NaN, 'AutoRename', true, 'Tunable', true),... % Thrust coefficient - N/(s^2*kg*m^2), speed in rev/s.
+                'k_P_mod', compParam('k_P_mod',  NaN, 'AutoRename', true, 'Tunable', true) ,... % Power coefficient modifier
+                'k_T_mod', compParam('k_T_mod', NaN, 'AutoRename', true, 'Tunable', true),... % Thrust coefficient modifier
                 'D', compParam('D', D, 'AutoRename', true, 'Tunable', true, 'Unit', "m"),...
                 'P', compParam('P', P, 'AutoRename', true, 'Tunable', true, 'Unit', "m"),...
                 'Mass', extrinsicProp('Mass', 0.012275, 'AutoRename',true,'Tunable',true, 'Unit', "kg"),...
@@ -93,7 +95,8 @@ classdef HolyBroS500 < QuadRotor
             
             prop.J.Dependent = true; % Use the estimate function from PMSMMotor since we don't know the actual value
             prop = setQRS500AeroCoeffs(prop); % Sets k_P and k_T from experimental data
-            prop.k_P.Value = 0.038; % From Experimental Tweaking
+            prop.k_P_mod.Value = 0.8442; % From Experimental Tweaking
+            prop.k_T_mod.Value = 0.8047; 
             
             %%
             obj = obj@QuadRotor('Frame', frame, 'Battery', batt, 'DCBus', bus, 'PMSMInverter', esc, 'Propeller', prop, 'PMSMMotor', motor);
@@ -101,6 +104,7 @@ classdef HolyBroS500 < QuadRotor
             
             %% General
             obj.MaxPropDiameter = 0.356; % m, used for in Optimization algorithm
+            %obj.MaxPropDiameter = 0.3048; Realistic value from experimental testing
             obj.Height = 0.1; % Approximate Height of the quadrotor in m, used to estimate drag
             obj.DragCoefficient = 1.2;
         end

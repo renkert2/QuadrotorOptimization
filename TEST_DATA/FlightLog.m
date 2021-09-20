@@ -234,16 +234,15 @@ classdef FlightLog < handle
         Raw struct
         Data struct
         
+        Components ComponentData
+    
         StartingVoltage double % Used for calibration of Voltage signal
         EndingVoltage double % Used for calibration of Voltage signal
-        VehicleMass double % Mass of vehicle, All components including battery
-        BatteryCells double
-        BatteryCapacity double % mAh
-        
+
         BatteryLookup BattLookup
     end
     
-    properties (SetAccess = private)
+    properties (SetAccess = private) 
         FlightTime duration
         ActiveTimes datetime
     end
@@ -254,16 +253,48 @@ classdef FlightLog < handle
         EndingSOC double
         BatteryResistance double
         
+        VehicleMass double % Mass of vehicle, All components including battery and frame
+    end
+    
+    properties (Hidden)
+       BattNs double
+       BattCapacity double
     end
     
     methods
-        function obj = FlightLog(file)
+        function obj = FlightLog(file, CD)
             s = load('LiPo_42V_Lookup.mat', 'LiPo_42V_Lookup');
             obj.BatteryLookup = s.LiPo_42V_Lookup;
             
             varnamecell = cellstr(obj.RawVarNames);
             raw = load(file, '-mat', varnamecell{:});
             obj.Raw = raw;
+            
+            if nargin == 2
+                obj.Components = CD;
+            end
+        end
+        
+        function set.VehicleMass(obj, mass)
+            valid_flag = false;
+            if ~isempty(obj.Components)
+                valid_flag = ismember("Frame", [obj.Components.Component]);
+            end
+            assert(valid_flag, "Frame component must be set before vehicle mass");
+            
+            setFrameMass(obj, mass)
+        end
+        
+        function m = get.VehicleMass(obj)
+            single_comps = filterComponent(obj.Components, ["Frame", "Battery"]);
+            single_tbl = table(single_comps);
+            single_tbl = single_tbl{end};
+            
+            quad_comps = filterComponent(obj.Components, ["PMSMInverter", "PMSMMotor", "Propeller"]);
+            quad_tbl = table(quad_comps);
+            quad_tbl = quad_tbl{end};
+            
+            m = sum(single_tbl.Mass) + 4*sum(quad_tbl.Mass); 
         end
         
         function init(obj)
@@ -417,21 +448,33 @@ classdef FlightLog < handle
             % Based on V vs. SOC Curve
              bat = obj.Data.BAT;
              v = bat.VoltCorr;
-             q = interp1(obj.BatteryLookup.V_OCV * obj.BatteryCells, obj.BatteryLookup.SOC, v, 'pchip', 'extrap');
+             
+             batt_data = filterComponent(obj.Components, "Battery").Data;
+             batt_n_s = filterSym(batt_data, "N_s").Value;
+             obj.BattNs = batt_n_s;
+             batt_cap = filterSym(batt_data, "Q").Value;
+             obj.BattCapacity = batt_cap;
+             
+             
+             q = interp1(obj.BatteryLookup.V_OCV * batt_n_s, obj.BatteryLookup.SOC, v, 'pchip', 'extrap');
              q(q > 1) = 1;
              q(q < 0) = 0;
-             obj.Data.BAT.SOC = q;
+             obj.Data.BAT.SOCVolt = q;
              
              % Current Correction
              i_tot = bat.CurrTot(end);
-             i_tot_act = (obj.StartingSOC - obj.EndingSOC)*obj.BatteryCapacity;
+             i_tot_act = (obj.StartingSOC - obj.EndingSOC)*batt_cap;
              scale_fact = i_tot_act/i_tot;
              obj.Data.BAT.CurrCorr = obj.Data.BAT.Curr*scale_fact;
              obj.Data.BAT.CurrTotCorr = obj.Data.BAT.CurrTot*scale_fact;
              
+             % Based on Direct Current Measurement
+             i = obj.Data.BAT.CurrTot;
+             obj.Data.BAT.SOCCurr = (batt_cap*obj.StartingSOC - i)./batt_cap;
+             
              % Based on Corrected Current
              i = obj.Data.BAT.CurrTotCorr;
-             obj.Data.BAT.SOCCurr = (obj.BatteryCapacity*obj.StartingSOC - i)./obj.BatteryCapacity;
+             obj.Data.BAT.SOCCurrCorr = (batt_cap*obj.StartingSOC - i)./batt_cap;
         end
         
         function r_p = get.BatteryResistance(obj)
@@ -461,12 +504,12 @@ classdef FlightLog < handle
         end
         
         function q = get.StartingSOC(obj)
-            q_vec = obj.Data.BAT.SOC;
+            q_vec = obj.Data.BAT.SOCVolt;
             q = mean(q_vec(1:10));
         end
         
         function q = get.EndingSOC(obj)
-            q_vec = obj.Data.BAT.SOC;
+            q_vec = obj.Data.BAT.SOCVolt;
             q = mean(q_vec(end-10:end));
         end
         
@@ -507,6 +550,7 @@ classdef FlightLog < handle
 %             
 %             batt_voltage_filt = batt_volt_rest_est / batt_volt_max;
 %             lift_max = batt_voltage_filt .* (1 - e) + e .* batt_voltage_filt .* batt_voltage_filt;
+
             batt_voltage_filt = 1;
             lift_max = 1;
 
@@ -597,6 +641,45 @@ classdef FlightLog < handle
             
             ts = timeseries(adat, seconds(t));
         end
+        
+        function ave_current = calcAverageCurrent(obj)
+            t = obj.Data.BAT.Time;
+            [t, I_act] = obj.time2ActiveTime(t);
+            t = seconds(t(I_act));
+            ave_current = mean(obj.Data.BAT.CurrCorr(I_act)); 
+        end
+        
+        function ft_max = calcMaxFlightTime(obj, final_soc)
+            % Caution: This won't be very accurate since current increases
+            % as function of SOC
+            if numel(obj) == 1
+                ft_max = calcMaxFlightTime_(obj, final_soc);
+            else
+                for i = 1:numel(obj)
+                    ft_max(i,1) = calcMaxFlightTime_(obj(i), final_soc);
+                end
+            end
+            
+            function ft_max = calcMaxFlightTime_(obj, final_soc)
+                % Average Current
+                t = obj.Data.BAT.Time;
+                [t, I_act] = obj.time2ActiveTime(t);
+                t = seconds(t(I_act));
+                q = obj.Data.BAT.SOCCurrCorr(I_act); % Could also use raw, uncorrected SOC here if we want to remove the voltage curve variable
+                
+                if final_soc >= obj.EndingSOC
+                    ft_max = interp1(q,t,final_soc);
+                else
+                    warning("Extrapolating Flight Time")
+                    act_curr = obj.Data.BAT.CurrCorr(I_act);
+                    ave_current = mean(act_curr(end-200:end-100));
+                    ft_max = ((obj.BattCapacity / 1000 * (1 - final_soc))/ave_current)*(60^2); % s
+                    
+                end
+                ft_max = seconds(ft_max);
+                ft_max.Format = 'hh:mm:ss';
+            end
+        end
     end
     
     methods (Access = private)
@@ -637,6 +720,19 @@ classdef FlightLog < handle
                    end
                end
             end
+        end
+        
+        function setFrameMass(obj, total_mass)
+            % adjusts mass of frame so that the combined component mass
+            % matches total mass
+            
+            mass_delta = total_mass - obj.VehicleMass;
+            i_frame = [obj.Components.Component] == "Frame";
+            frame_data = obj.Components(i_frame).Data;
+            i_frame_mass = [frame_data.Sym] == "Mass";
+            
+            
+            obj.Components(i_frame).Data(i_frame_mass).Value = obj.Components(i_frame).Data(i_frame_mass).Value + mass_delta;
         end
     end
 end

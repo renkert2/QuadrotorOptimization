@@ -6,16 +6,15 @@ classdef PowertrainModelValidation < handle
     end
     
     properties
-        Wks Simulink.ModelWorkspace
-        
         FL FlightLog
         PT PowerTrain
         Pairs struct
-        
-        InputTS timeseries
     end
     
     properties (SetAccess = private)
+        Wks Simulink.ModelWorkspace
+        InputTS timeseries
+        
         SO QRSimOut
         SimOutDesc struct
     end
@@ -33,6 +32,11 @@ classdef PowertrainModelValidation < handle
             obj.Wks = get_param(obj.Name, 'ModelWorkspace');
             assignin(obj.Wks, "PT_Object", obj.PT);
             assignin(obj.Wks, "SYS_Object", obj);
+        end
+        
+        function setModelParams(obj)
+            loadValues(obj.PT.Params, obj.FL.Components);
+            obj.PT.Params.update;
         end
         
         function setTestConditions(obj)
@@ -95,7 +99,7 @@ classdef PowertrainModelValidation < handle
         function s = setPairs(obj)
             c = {"Bus Voltage", "V", {"PT_out", "Internal Voltage"}, {"BAT", "VoltCorr"};...
                 "Bus Current", "I", {"PT_out", "Internal Current"}, {"BAT", "CurrCorr"};...
-                "Battery SOC", "q", {"PT_out", "Battery SOC"}, {"BAT", ["SOC" "SOCCurr"]};...
+                "Battery SOC", "q", {"PT_out", "Battery SOC"}, {"BAT", "SOCCurrCorr"};...
                 };
             s = struct('Name', c(:,1), 'YLabel', c(:,2), 'MArgs', c(:,3), 'FLArgs', c(:,4));
             

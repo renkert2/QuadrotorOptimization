@@ -30,17 +30,22 @@ classdef Battery < Component
     
     properties (SetAccess = private)
         Nominal_SOC double = 1 % SOC at which V_OCV(q) = V_OCV_nominal
-        
-        Fit paramFit
+        Averaged_SOC double % SOC at which V_OCV(q) = V_OCV_Average  
     end
     
-    properties (Dependent)
+    properties (Dependent)        
         V_OCV_averaged double
-        Averaged_SOC double % SOC at which V_OCV(q) = V_OCV_Average
         OperatingCapacity double
         ChargeTime double % Seconds
     end
     
+    properties(SetAccess = private)
+        Surrogate BatterySurrogate
+    end
+    properties (Dependent)
+        Fit paramFit
+    end
+
     methods        
         function setV_OCV_curve(obj,arg)
             if isa(arg, 'BattLookup')
@@ -56,7 +61,13 @@ classdef Battery < Component
             obj.Nominal_SOC = nq(1);
         end
         
-        function q = get.Averaged_SOC(obj)
+        function set.OperatingSOCRange(obj,val)
+            assert(val(1) < val(2), "SOC range defined as [Min SOC, Max SOC]");
+            obj.OperatingSOCRange = val;
+            calcAveraged_SOC(obj);
+        end
+        
+        function q = calcAveraged_SOC(obj)
             % SOC at which V_OCV(q) = V_OCV_Average, average taken over
             % operating range
             if obj.variableV_OCV
@@ -68,6 +79,7 @@ classdef Battery < Component
             else
                 q = 1;
             end
+            obj.Averaged_SOC = q;
         end
         
         function v = get.V_OCV_averaged(obj)
@@ -100,11 +112,11 @@ classdef Battery < Component
             end
             
             
-            load BatteryFit.mat BatteryFit;
-            BatteryFit.Inputs = [obj.N_s, obj.Q];
-            BatteryFit.Outputs = [obj.R_s, obj.Mass, obj.Price];
-            BatteryFit.setOutputDependency();
-            obj.Fit = BatteryFit;
+            bs = BatterySurrogate();
+            bs.Fit.Inputs = [obj.N_s, obj.Q];
+            bs.Fit.Outputs = [obj.R_s, obj.Mass, obj.Price];
+            bs.Fit.setOutputDependency();
+            obj.Surrogate = bs;
             
             rpfun = @(N_s,N_p,R_s) N_s./N_p.*R_s;
             setDependency(obj.R_p, rpfun, [obj.N_s, obj.N_p, obj.R_s]);
@@ -116,6 +128,11 @@ classdef Battery < Component
             
             V_pack_sym = obj.N_s.*obj.V_OCV_nominal.*obj.V_OCV_curve;
             obj.V_OCV_pack = matlabFunction([obj.N_s], V_pack_sym, {sym('q')});
+            
+            calcAveraged_SOC(obj);
+        end
+        function f = get.Fit(obj)
+            f = obj.Surrogate.Fit;
         end
     end
     

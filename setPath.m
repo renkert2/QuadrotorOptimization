@@ -1,6 +1,6 @@
 addpath(genpath('COMPONENTS'));
-addpath(genpath('EXPORTS'));
-addpath(genpath('STUDIES'));
-addpath(genpath('TESTS'));
+addpath('STUDIES');
+addpath('TESTS');
 addpath(genpath('SUPPORT_FUNCTIONS'));
 addpath(genpath('OPTIM'));
+addpath(genpath('UI_Objects'));
