@@ -4,7 +4,8 @@ classdef QRS_Function < OptiFunctions.Parents.Function
     end
     
     methods
-        function obj = QRS_Function(qrs)
+        function obj = QRS_Function(qrs, varargin)
+            obj = obj@OptiFunctions.Parents.Function(varargin{:});
             obj.QRS = qrs;
         end
     end

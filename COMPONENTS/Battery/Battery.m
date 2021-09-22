@@ -10,6 +10,7 @@ classdef Battery < Component
         N_p compParam = compParam('N_p', 1, 'Unit', "unit") % Number of cells in parallel
         N_s compParam = compParam('N_s', 3, 'Unit', "unit") % Number of cells in series
         Q compParam = compParam('Q', 4000, 'Unit', "mAh") % mAh
+        C compParam = compParam('C', 75, 'Unit', "A/Ah", 'Description', "Constant Discharge Rating") % C-Rating: I = C(1/hr) * Q(Ah) = A
     
         % Dependent Params - Dependency set in init()
         R_s compParam = compParam('R_s', (10e-3) / 3, 'Unit', "Ohm") % Series Resistance - Ohms - From Turnigy Website
@@ -24,7 +25,8 @@ classdef Battery < Component
     
     properties (SetAccess = private)
         R_p compParam = compParam('R_p', NaN, 'Unit', "Ohm", 'Description', 'Pack Resistance') % Dependent compParam, pack resistance
-        Capacity compParam = compParam('Capacity', NaN, 'Unit', "Amp*second", 'Description', 'Pack Capacity'); % Dependent compParam A*s
+        Capacity compParam = compParam('Capacity', NaN, 'Unit', "As", 'Description', 'Pack Capacity'); % Dependent compParam A*s
+        DischargeCurrent compParam = compParam('MaxDischarge', NaN, 'Unit', "A", 'Description', 'Maximum constant discharge current');
         V_OCV_pack function_handle % Depends on q
     end
     
@@ -125,6 +127,10 @@ classdef Battery < Component
             capfun = @(N_p,Q) N_p.*Battery.mAhToCoulombs(Q);
             setDependency(obj.Capacity, capfun, [obj.N_p, obj.Q]);
             obj.Capacity.Dependent = true;
+            
+            dischargefun = @(C,Q) C*Q/1000; 
+            setDependency(obj.DischargeCurrent, dischargefun, [obj.C, obj.Q]);
+            obj.DischargeCurrent.Dependent = true;
             
             V_pack_sym = obj.N_s.*obj.V_OCV_nominal.*obj.V_OCV_curve;
             obj.V_OCV_pack = matlabFunction([obj.N_s], V_pack_sym, {sym('q')});

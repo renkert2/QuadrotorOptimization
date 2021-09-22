@@ -43,10 +43,8 @@ classdef Optimization < handle
         function init(obj)
             % Initialize Constraints and Objectives
             obj.Objective = OptiFunctions.FlightTimePerPrice(obj.QR);
-            obj.Constraints = [OptiFunctions.BatteryBoundary(obj.QR);...
-                OptiFunctions.MotorBoundary(obj.QR);...
-                OptiFunctions.PropellerBoundary(obj.QR);...
-                OptiFunctions.InputConstraint(obj.QR)];        
+            obj.setDefaultConstraints();
+            
             
             batt = obj.QR.PT.Battery;
             prop = obj.QR.PT.Propeller;
@@ -77,6 +75,27 @@ classdef Optimization < handle
                 prop.Mass;
                 prop.Price;];
             storeDependentDefault(obj.DependentParams);
+        end
+        
+        function setDefaultConstraints(obj)      
+            obj.Constraints = [...
+                % Boundary Constraints
+                OptiFunctions.BatteryBoundary(obj.QR);...
+                OptiFunctions.MotorBoundary(obj.QR);...
+                OptiFunctions.PropellerBoundary(obj.QR);...
+                
+                % Steady-State Input Constraint
+                OptiFunctions.InputConstraint(obj.QR);...
+                
+                % Current Constraints - Lower Bound on Current Margin
+                OptiFunctions.BatteryCurrentConstraint(obj.QR, 'LB', 0);...
+                OptiFunctions.InverterCurrentConstraint(obj.QR, 'LB', 0)
+                ];
+            if isdynamic(obj.Objective)
+                batt = obj.QR.PT.Battery;
+                soc_con = OptiFunctions.FinalSOC(obj.QRS, 'LB', batt.OperatingSOCRange(1));
+                obj.Constraints = vertcat(obj.Constraints, soc_con);
+            end
         end
         
         function cd = get.CD(obj)
@@ -320,7 +339,7 @@ classdef Optimization < handle
                     optimopts = optimoptions(optimopts, 'Algorithm', 'sqp');
                     
                     % Options for Simulation-Based Optimization
-                    if isa(obj.Objective.QRS, "QuadRotorSystem") % Test to see if objective is simulation-based
+                    if isdynamic(obj.Objective) % Test to see if objective is simulation-based.  This is weak-sauce coding
                         optimopts = optimoptions(optimopts, 'DiffMinChange', opts.SimulationDiffMinChange);
                     end
                     

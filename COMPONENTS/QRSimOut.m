@@ -54,9 +54,19 @@ classdef QRSimOut
             end
         end
         
-        function ts = getTS(obj, signal)
+        function [ts,t,x] = getTS(obj, signal, f)
             s = get(obj.Data.yout, signal);
             ts = s.Values;
+            t = seconds(ts.Time);
+            x = ts.Data;
+            if nargin == 3
+                if isstring(f)
+                    I = find(obj, signal, f);
+                else
+                    I = f;
+                end
+                x = x(:,I);
+            end     
         end
     end
 end
