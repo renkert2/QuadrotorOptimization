@@ -1,11 +1,12 @@
-classdef FlightTime < OptiFunctions.Parents.Function
+classdef FlightTime < OptiFunctions.Parents.QR_Function
     methods
-        function obj = FlightTime()
+        function obj = FlightTime(qr)
+            obj = obj@OptiFunctions.Parents.QR_Function(qr);
             obj.Sym = "ft";
             obj.Unit = "s";
         end
-        function v = Value(obj, QR)
-            v = QR.FlightTime;
+        function v = Value(obj)
+            v = obj.QR.FlightTime;
         end
         function f = val2f(obj, v)
             f = -v;

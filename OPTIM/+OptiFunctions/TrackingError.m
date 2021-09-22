@@ -1,11 +1,12 @@
-classdef TrackingError < OptiFunctions.Parents.Function
+classdef TrackingError < OptiFunctions.Parents.QRS_Function
     methods
-        function obj = TrackingError()
+        function obj = TrackingError(qrs)
+            obj = obj@OptiFunctions.Parents.QRS_Function(qrs);
             obj.Sym = "E";
             obj.Unit = "m*s";
         end
-        function v = Value(obj, QRS)
-            v = QRS.trackingError();
+        function v = Value(obj)
+            v = obj.QRS.trackingError();
         end
         function f = val2f(obj, v)
             f = v;

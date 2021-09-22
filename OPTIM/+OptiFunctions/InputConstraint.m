@@ -1,12 +1,13 @@
-classdef InputConstraint < OptiFunctions.Parents.Function
+classdef InputConstraint < OptiFunctions.Parents.QR_Function
     methods
-        function obj = InputConstraint()
+        function obj = InputConstraint(qr)
+            obj = obj@OptiFunctions.Parents.QR_Function(qr);
             obj.Sym = "u";
             obj.Unit = "unit";
         end
         
-        function v = Value(obj, QR)
-            v = QR.SS_QAve.u;
+        function v = Value(obj)
+            v = obj.QR.SS_QAve.u;
         end
         
         function g = val2g(obj, v)

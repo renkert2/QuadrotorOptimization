@@ -1,12 +1,13 @@
-classdef BatteryBoundary < OptiFunctions.Parents.Function
+classdef BatteryBoundary < OptiFunctions.Parents.QR_Function
     methods
-        function obj = BatteryBoundary()
+        function obj = BatteryBoundary(qr)
+            obj = obj@OptiFunctions.Parents.QR_Function(qr);
             obj.Sym = "B_B";
             obj.Unit = "unit";
         end
         
-        function v = Value(obj, QR)
-            batt = QR.PT.Battery;
+        function v = Value(obj)
+            batt = obj.QR.PT.Battery;
             v = distToBoundary(batt.Fit.Boundary, [batt.Fit.Inputs.Value]');
         end
         

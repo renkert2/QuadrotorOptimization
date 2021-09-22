@@ -1,11 +1,12 @@
-classdef Mass < OptiFunctions.Parents.Function
+classdef Mass < OptiFunctions.Parents.QR_Function
     methods
-        function obj = Mass()
+        function obj = Mass(qr)
+            obj = obj@OptiFunctions.Parents.QR_Function(qr);
             obj.Sym = "m";
             obj.Unit = "kg";
         end
-        function v = Value(obj, QR)
-            v = QR.Mass.Value;
+        function v = Value(obj)
+            v = obj.QR.Mass.Value;
         end
         function f = val2f(obj, v)
             f = v;

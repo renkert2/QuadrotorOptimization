@@ -41,6 +41,7 @@ classdef QuadRotorSystem < handle
     methods
         function obj = QuadRotorSystem(QR)
             obj.QR = QR;
+            obj.init();
         end
         
         function init(obj)
@@ -74,6 +75,7 @@ classdef QuadRotorSystem < handle
             obj.setLQR();
             sys_time = 2*obj.QR.FlightTime; % Maximum simulation time. Stop System block handles convergence or battery draining
             set_param(obj.Name, 'StopTime', num2str(sys_time));
+            obj.Simulate();
         end
         
         function qrso = Simulate(obj, opts)

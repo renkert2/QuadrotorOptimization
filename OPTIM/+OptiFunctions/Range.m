@@ -1,11 +1,12 @@
-classdef Range < OptiFunctions.Parents.Function
+classdef Range < OptiFunctions.Parents.QR_Function
     methods
-        function obj = Range()
+        function obj = Range(qr)
+            obj = obj@OptiFunctions.Parents.QR_Function(qr);
             obj.Sym = "d";
             obj.Unit = "m";
         end
-        function v = Value(obj, QR)
-            v = QR.Range;
+        function v = Value(obj)
+            v = obj.QR.Range;
         end
         function f = val2f(obj, v)
             f = -v;

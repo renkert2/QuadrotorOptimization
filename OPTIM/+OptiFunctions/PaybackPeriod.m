@@ -1,10 +1,12 @@
-classdef PaybackPeriod < OptiFunctions.Parents.Function
+classdef PaybackPeriod < OptiFunctions.Parents.QR_Function
     methods
-        function obj = PaybackPeriod()
+        function obj = PaybackPeriod(qr)
+            obj = obj@OptiFunctions.Parents.QR_Function(qr);
             obj.Sym = "ft/P";
             obj.Unit = "s/$";
         end
-        function v = Value(obj, QR)
+        function v = Value(obj)
+            QR = obj.QR;
             ft = QR.FlightTime;
             p = QR.Price.Value;
             charge_time = QR.PT.Battery.ChargeTime;
