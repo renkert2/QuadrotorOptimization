@@ -122,6 +122,7 @@ classdef BodyModel < Model
                 opts.RefTraj timeseries = timeseries.empty()
                 opts.Annotate logical = true
                 opts.TrajectoryNames string = string.empty()
+                opts.Painter logical = true
             end
             
             if ~isempty(opts.ParentAxes)
@@ -170,42 +171,43 @@ classdef BodyModel < Model
                 error("x_arg must be a double of size [N_t,N_x] or a cell array of double arrays");
             end
             
-            trans_paint = trans(1:opts.Interval:end, :);
-            rots_paint = rots(1:opts.Interval:end, :);
-            
-            
             daspect([1 1 1])
             grid on
             view(ax, 3)
             axis padded
+            
+            if opts.Painter
+                trans_paint = trans(1:opts.Interval:end, :);
+                rots_paint = rots(1:opts.Interval:end, :);
+    
+                meshPath = robotics.internal.validation.findFilePath('multirotor.stl', 'plotTransforms', 'MeshFilePath');
+                inertialZDirection = 'down';
+                painter = robotics.core.internal.visualization.TransformPainter(ax, meshPath, false);
+                painter.Color = [1 0 0];
+                painter.Size = 1;
+                painter.InertialZDownward = strcmp(inertialZDirection, 'down');
+                
+                for i = 1:size(trans_paint, 1)
+                    painter.paintAt(trans_paint(i,:), rots_paint(i,:));
+                end
+                
+                painter.HandleXAxis.DisplayName = 'Body X axis';
+                painter.HandleYAxis.DisplayName = 'Body Y axis';
+                painter.HandleZAxis.DisplayName = 'Body Z axis';
+            end
+            
             if opts.Annotate
                 title("QuadRotor Trajectory Plot")
                 xlabel("$$x$$", 'Interpreter', 'latex')
                 ylabel("$$-y$$", 'Interpreter', 'latex')
                 zlabel("$$-z$$", 'Interpreter', 'latex')
-            end
-
-            meshPath = robotics.internal.validation.findFilePath('multirotor.stl', 'plotTransforms', 'MeshFilePath');
-            inertialZDirection = 'down';
-            painter = robotics.core.internal.visualization.TransformPainter(ax, meshPath, false);
-            painter.Color = [1 0 0];
-            painter.Size = 1;
-            painter.InertialZDownward = strcmp(inertialZDirection, 'down');
-            
-            for i = 1:size(trans_paint, 1)
-                painter.paintAt(trans_paint(i,:), rots_paint(i,:));
-            end
-            
-            painter.HandleXAxis.DisplayName = 'Body X axis';
-            painter.HandleYAxis.DisplayName = 'Body Y axis';
-            painter.HandleZAxis.DisplayName = 'Body Z axis';
-            
-            if opts.Annotate
-                lgnd_children = [traj_children, painter.HandleXAxis, painter.HandleYAxis, painter.HandleZAxis];
-                if ~isempty(opts.TrajectoryNames)
-                    traj_names = opts.TrajectoryNames;
+                
+                lgnd_children = traj_children;
+                lgnd_labels = [opts.TrajectoryNames];
+                if opts.Painter
+                    lgnd_children = [lgnd_children, painter.HandleXAxis, painter.HandleYAxis, painter.HandleZAxis];
+                    lgnd_labels = [lgnd_labels,"Body X axis", "Body Y axis", "Body Z axis"];
                 end
-                lgnd_labels = [traj_names, "Body X axis", "Body Y axis", "Body Z axis"];
                 if ln_ref_flag
                     lgnd_children = [ln_ref, lgnd_children];
                     lgnd_labels = ["Reference Trajectory", lgnd_labels];

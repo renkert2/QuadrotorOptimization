@@ -100,7 +100,7 @@ classdef QuadRotorSystem < handle
         function ax = plot(obj, so, pltopts)
             arguments
                 obj
-                so = obj.SimOut
+                so QRSimOut = obj.SimOut
                 pltopts cell = {}
             end
             y = get(so.Data.yout, 'y_out').Values.Data;

@@ -89,7 +89,7 @@ classdef Battery < Component
         end
         
         function c = get.OperatingCapacity(obj)
-            c = obj.Capacity.Value*range(obj.OperatingSOCRange);
+            c = obj.Capacity.Value*(max(obj.OperatingSOCRange) - min(obj.OperatingSOCRange));
         end
         
         function t = get.ChargeTime(obj)
