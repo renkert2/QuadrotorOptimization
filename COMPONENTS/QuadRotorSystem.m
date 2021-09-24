@@ -26,6 +26,7 @@ classdef QuadRotorSystem < handle
     
     properties
         K_lqr double
+        K_lqi double
         SysSteadyState double
         EnableStop logical = true
         
@@ -146,22 +147,38 @@ classdef QuadRotorSystem < handle
             d_ss = zeros(3,1);
             [Ab,Bb,~,Cb,Db,~] = CalcMatrices(obj.QR.BM.LinearModel,x_ss,u_ss,d_ss);
             obj.SysSteadyState = [u_ss;x_ss];
-            
             BM = ss(Ab,Bb,Cb,Db);
             BM.InputName = {'W'};
             BM.OutputName = {'y'};
             obj.LinearBodyModel = BM;
             
-            plant = connect(PT,BM, 'u', {'W','y'});
+            comb = connect(PT,BM, 'u', {'W','y'});
+            N_x = size(comb.A,1); % Number of states in combined system; quite messy
+            N_u = size(comb.B,2);
+
+            % Set Output to Position States
+            I_x_p = 4 + obj.QR.BM.I.x.p;
+            N_y = numel(I_x_p);
+            C = zeros(N_y, N_x);
+            for j = 1:N_y
+                C(j,I_x_p(j)) = 1;
+            end
+            D = comb.D(1:size(C,1),:);
+            plant = ss(comb.A, comb.B, C, D);
             obj.LinearPlantModel = plant;
-            
-            Q = eye(size(plant.A,1));
+
+            %% LQR
+            Q = eye(N_x);
             Q(1:4,1:4) = 0; % We don't care about the speed state
-            R = rho*eye(size(plant.B,2));
-            
-            N = [0];
+            R = rho*eye(N_u);
+            N = zeros(N_x, N_u);
             
             obj.K_lqr = lqr(plant,Q,R,N);
+
+            %% LQI - Track Position Reference
+            Q = eye(N_x + N_y);
+            %N = zeros(N_x + N_y, N_u);
+            obj.K_lqi = lqi(plant,Q,R);
         end
         
         function plotTrackingError(obj)
