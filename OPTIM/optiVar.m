@@ -177,6 +177,7 @@ classdef optiVar < handle
         
         function t = dispTableLatex(obj)
             t = dispTable(obj, ["Sym", "Value", "Unit"], ["x0", "lb", "ub", "percentChange"], 'ChildOpts',{'LatexSym', true, 'LatexOpts',{'UnitFlag',false,'InlineArg',"$"}});
+            t.percentChange = strrep(t.percentChange, "%", "\%");
             t.Properties.VariableNames = ["Variable", "$X^*$", "Unit", "$X_0$", "LB", "UB", "\% Change"];
         end
     end
