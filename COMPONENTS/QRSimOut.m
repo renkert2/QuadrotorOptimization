@@ -27,6 +27,8 @@ classdef QRSimOut
                 ts = getTS(obj, s);
                 t = seconds(ts.Time);
                 x = ts.Data;
+                x = permute(x,[3 1 2]); % Reshape Time Series array
+                x = x(:,:); % Reject third dimension
                 desc = obj.Desc.(s);
                 if nargin == 2
                     if isstring(f)

@@ -3,12 +3,12 @@ classdef QuadRotorSystem < handle
     %   Detailed explanation goes here
     
     properties (Constant)
-        Name char = 'QuadRotor_Simulink'
-        PlantSubsystem char = 'QuadRotor_Simulink/PlantSubsystem'
-        CombinedLinearPlantModel char = 'QuadRotor_Simulink/PlantSubsystem/CombinedLinearPlantModel'
-        IndividualPlantModel char = 'QuadRotor_Simulink/PlantSubsystem/IndividualPlantModel'
-        PowertrainSubsystem char = 'QuadRotor_Simulink/PlantSubsystem/IndividualPlantModel/PowertrainSubsystem'
-        BodySubsystem char = 'QuadRotor_Simulink/PlantSubsystem/IndividualPlantModel/BodySubsystem'
+        Name char = 'QuadRotor_Simulink_LQI'
+        PlantSubsystem char = 'QuadRotor_Simulink_LQI/PlantSubsystem'
+        CombinedLinearPlantModel char = 'QuadRotor_Simulink_LQI/PlantSubsystem/CombinedLinearPlantModel'
+        IndividualPlantModel char = 'QuadRotor_Simulink_LQI/PlantSubsystem/IndividualPlantModel'
+        PowertrainSubsystem char = 'QuadRotor_Simulink_LQI/PlantSubsystem/IndividualPlantModel/PowertrainSubsystem'
+        BodySubsystem char = 'QuadRotor_Simulink_LQI/PlantSubsystem/IndividualPlantModel/BodySubsystem'
     end
     
     properties
@@ -25,6 +25,10 @@ classdef QuadRotorSystem < handle
     end
     
     properties
+        Nx double
+        Ny double
+        Nu double
+
         K_lqr double
         K_lqi double
         SysSteadyState double
@@ -123,16 +127,22 @@ classdef QuadRotorSystem < handle
             if nargin == 1
                 so = obj.SimOut;
             end
-            t = so.tout;
-            y = get(so.yout, 'y_out').Values.Data;
+            t = so.Data.tout;
+            y = get(so.Data.yout, 'y_out').Values.Data;
             ax = obj.QR.BM.animate(t,y, 'RefTraj', obj.RefTraj);
         end
         
         function setLQR(obj, rho)
             arguments
                 obj
-                rho (1,1) double = 1
+                rho (1,1) double = 0.1
             end
+            q_omega = 0;
+            q_p = .001;
+            q_v = .001;
+            q_phi = 1;
+            q_b_omega = 1;
+            q_I = 1000;
             
             %% PowerTrain Model
             PT = obj.QR.PT.getFirstOrderSS(obj.QR.SS_QAve);
@@ -167,17 +177,28 @@ classdef QuadRotorSystem < handle
             plant = ss(comb.A, comb.B, C, D);
             obj.LinearPlantModel = plant;
 
+            obj.Nx = N_x;
+            obj.Ny = N_y;
+            obj.Nu = N_u;
+
+            %% Weighting Matrices
+            Q_omega = q_omega*eye(4,4);
+            Q_p = q_p*eye(3,3);
+            Q_v = q_v*eye(3,3);
+            Q_phi = q_phi*eye(3,3);
+            Q_b_omega = q_b_omega*eye(3,3);
+
             %% LQR
-            Q = eye(N_x);
-            Q(1:4,1:4) = 0; % We don't care about the speed state
+            Q = blkdiag(Q_omega, Q_p, Q_v, Q_phi, Q_b_omega);
             R = rho*eye(N_u);
             N = zeros(N_x, N_u);
             
             obj.K_lqr = lqr(plant,Q,R,N);
 
             %% LQI - Track Position Reference
-            Q = eye(N_x + N_y);
-            %N = zeros(N_x + N_y, N_u);
+            Q_I = q_I*eye(3);
+            Q = blkdiag(Q,Q_I);
+
             obj.K_lqi = lqi(plant,Q,R);
         end
         
