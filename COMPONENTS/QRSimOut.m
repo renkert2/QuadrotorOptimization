@@ -27,8 +27,10 @@ classdef QRSimOut
                 ts = getTS(obj, s);
                 t = seconds(ts.Time);
                 x = ts.Data;
-                x = permute(x,[3 1 2]); % Reshape Time Series array
-                x = x(:,:); % Reject third dimension
+                if size(x,3) > 1
+                    x = permute(x,[3 1 2]); % Reshape Time Series array
+                    x = x(:,:); % Reject third dimension
+                end
                 desc = obj.Desc.(s);
                 if nargin == 2
                     if isstring(f)
@@ -60,7 +62,13 @@ classdef QRSimOut
             
             so = obj_array(1);
             y = get(so.Data.yout, 'y_out').Values.Data;
+            if numel(size(y)) == 3
+                y = permute(y, [3 1 2]);
+            end
             r = get(so.Data.yout, 'r_out').Values.Data;
+            if numel(size(r)) == 3
+                r = permute(r, [3 1 2]);
+            end
             
             if numel(obj_array) > 1
                 arg = cell(1,numel(obj_array));
@@ -140,6 +148,17 @@ classdef QRSimOut
             err = target_trans - trans;
             norm_err = vecnorm(err, 2, 2);
             cum_err = trapz(t,norm_err);
+        end
+
+        function l = isValid(obj)
+            % Check to see if simulation results are valid
+            % Could also implement simulation ExitFlag here
+            l = true;
+            if isequal(obj.Data.getSimulationMetadata.ExecutionInfo.StopEvent, 'Timeout')
+                l = false;
+            elseif (get(obj.Data.yout, 'exit_flag').Values.Data(end)) < 0
+                l = false;
+            end
         end
     end
 end

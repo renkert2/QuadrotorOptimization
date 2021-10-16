@@ -28,7 +28,6 @@ classdef ReferenceTrajectory3D < handle
         % Parametrized by Time
         t double
         TimeSeries timeseries
-        
     end
     
     methods
@@ -36,7 +35,18 @@ classdef ReferenceTrajectory3D < handle
             if nargin
                 if isa(traj, "string")
                     switch traj
+                        case "Step"
+                            obj.Step('FinalPosition',[0 0 1]);
+                            obj.init();
+                            obj.Speed = 5;
+                            obj.Cycles = 1;
+                            obj.setTimeSeries();
                         case "Lemniscate"
+                            obj.Lemniscate('a',10, 'PotatoChipHeight', 2);
+                            obj.init();
+                            obj.Speed = 5;
+                            obj.Cycles = 1;
+                            obj.setTimeSeries();
                         case "AsymetricLemniscate"
                     end
                 end
@@ -76,6 +86,20 @@ classdef ReferenceTrajectory3D < handle
     end
     
     methods
+        function Step(obj, opts)
+            arguments
+                obj
+                opts.FinalPosition double = [0 0 -1]
+            end
+            obj.Type = 'Step';
+
+            xf = opts.FinalPosition;
+            x = @(u) u*xf(1);
+            y = @(u) u*xf(2);
+            z = @(u) u*xf(3);
+            setXYZ(obj, x, y, z);
+            obj.Period = 1;
+        end
         function Lemniscate(obj, opts)
             arguments
                 obj
