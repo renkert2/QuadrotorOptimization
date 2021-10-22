@@ -3,6 +3,7 @@ classdef PowerTrain < System
     %   Detailed explanation goes here
     properties (Constant)
         SpeedOutputs_I double = [3;5;7;9];
+        InductanceOutputs_I double = [2;4;6;8];
     end
     
     properties
@@ -159,6 +160,8 @@ classdef PowerTrain < System
         function rs = RotorSpeed(obj, T_req)
             rs = obj.Propeller.RotorSpeed(T_req/4);
         end
+        
+        
     end
 end
 
