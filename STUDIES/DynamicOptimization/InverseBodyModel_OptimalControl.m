@@ -34,9 +34,11 @@ b_omega_des = x_des(bm.I.x.omega, :);
 
 %% Calculate Optimal u, omega w.r.t. Input Constraints
 
+% 
+% [sol_u, sol_x, sol_omega_tilde, diagnostic] = OptiControl(pt,...
+%     numel(rt.t), rt.delta_T, omega_tilde_des, qr.SS_QAve);
 
-[sol_u, sol_x, sol_omega_tilde, diagnostic] = OptiControl(pt,...
-    numel(rt.t), rt.delta_T, omega_tilde_des, qr.SS_QAve);
+[sol_x, sol_u, sol_y, errorcode] = Solve(ptc, qr.SS_QAve, omega_tilde_des);
 
 %% Rotor Speed Error
 figure(1)

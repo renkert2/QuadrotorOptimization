@@ -1,5 +1,6 @@
 classdef QuadRotor < System
     properties
+        g double = 9.8067
         rho double = 1.205 % Air Density - kg/m^3
         Height double = 0.1 % Approximate Height of the quadrotor in m, used to estimate drag
         DragCoefficient double = 1.2
@@ -125,7 +126,7 @@ classdef QuadRotor < System
             J.update();
 
             % Hover Thrust
-            obj.HoverThrust = @() 9.81*obj.Mass.Value; % Total Thrust required to hover
+            obj.HoverThrust = @() obj.g*obj.Mass.Value; % Total Thrust required to hover
             % Hover Speed
             obj.HoverSpeed = @() obj.PT.RotorSpeed(obj.HoverThrust());
             

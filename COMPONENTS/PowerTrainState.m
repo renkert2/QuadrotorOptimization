@@ -102,6 +102,17 @@ classdef PowerTrainState < ModelState
             x = obj.y(9,:);
         end
     end
+    
+    methods
+        function x_full = simple2full(obj)
+            % Converts state of simple model to state of full model
+            i_q = obj.MotorCurrent;
+            omega = obj.RotorSpeed;
+            q = obj.q;
+            
+            x_full = [q; repmat([i_q; omega], 4, 1)];
+        end
+    end
         
         
 end

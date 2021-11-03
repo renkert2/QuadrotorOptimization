@@ -182,7 +182,7 @@ classdef BodyModel < Model
             tau_des = J*b_omega_des_dot + cross(b_omega_des, J*b_omega_des, 1);
 
             C = BodyModel.controlEffectivenessMatrix(K_T, K_Q, l);
-            omega_tilde_des = sqrt(C\[f_des; tau_des]);
+            omega_tilde_des = real(sqrt(C\[f_des; tau_des])); % Real in case the speeds want to go negative
             
             x_des = zeros(obj.Nx,N);
             x_des(obj.I.x.p, :) = p_des;
