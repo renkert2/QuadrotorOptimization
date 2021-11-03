@@ -2,9 +2,12 @@ classdef QR_InitialDesign < HolyBroS500
     % Modifies HolyBroS500 to include similar components from the Battery,
     % Propeller, and Motor databases.  It is used as the initial design
     % point for the optimization studies
+    properties
+        InitialConfiguration
+    end
     methods
         %% HolyBro S500
-        % https://shop.holybro.com/s500-v2-kitmotor2216-880kv-propeller1045_p1153.html
+        % https://shop.holybro.com/s500-v2-kitmotor2216-880kv-propeller1045_p1153.htm
         
         function obj = QR_InitialDesign()
             obj = obj@HolyBroS500();
@@ -28,6 +31,7 @@ classdef QR_InitialDesign < HolyBroS500
             
             %%
             comps = [batt, motor, prop];
+            obj.InitialConfiguration = comps;
             loadValues(obj.Params, comps);
             obj.update();
 

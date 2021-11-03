@@ -1,10 +1,12 @@
-classdef FlightProportion < OptiFunctions.Parents.Function
+classdef FlightProportion < OptiFunctions.Parents.QR_Function
     methods
-        function obj = FlightProportion()
+        function obj = FlightProportion(qr)
+            obj = obj@OptiFunctions.Parents.QR_Function(qr);
             obj.Sym = "ft";
             obj.Unit = "s";
         end
-        function v = Value(obj, QR)
+        function v = Value(obj)
+            QR = obj.QR;
             ft = QR.FlightTime;
             charge_time = QR.PT.Battery.ChargeTime;
             

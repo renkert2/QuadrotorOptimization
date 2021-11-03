@@ -3,19 +3,19 @@ classdef QuadRotorSystem < handle
     %   Detailed explanation goes here
     
     properties (Constant)
-        Name char = 'QuadRotor_Simulink'
-        PlantSubsystem char = 'QuadRotor_Simulink/PlantSubsystem'
-        CombinedLinearPlantModel char = 'QuadRotor_Simulink/PlantSubsystem/CombinedLinearPlantModel'
-        IndividualPlantModel char = 'QuadRotor_Simulink/PlantSubsystem/IndividualPlantModel'
-        PowertrainSubsystem char = 'QuadRotor_Simulink/PlantSubsystem/IndividualPlantModel/PowertrainSubsystem'
-        BodySubsystem char = 'QuadRotor_Simulink/PlantSubsystem/IndividualPlantModel/BodySubsystem'
+        Name char = 'QuadRotor_Simulink_LQI_BackCalculation'
+        PlantSubsystem char = 'QuadRotor_Simulink_LQI_BackCalculation/PlantSubsystem'
+        CombinedLinearPlantModel char = 'QuadRotor_Simulink_LQI_BackCalculation/PlantSubsystem/CombinedLinearPlantModel'
+        IndividualPlantModel char = 'QuadRotor_Simulink_LQI_BackCalculation/PlantSubsystem/IndividualPlantModel'
+        PowertrainSubsystem char = 'QuadRotor_Simulink_LQI_BackCalculation/PlantSubsystem/IndividualPlantModel/PowertrainSubsystem'
+        BodySubsystem char = 'QuadRotor_Simulink_LQI_BackCalculation/PlantSubsystem/IndividualPlantModel/BodySubsystem'
     end
     
     properties
         QR QuadRotor
         Wks Simulink.ModelWorkspace
         
-        RefTraj ReferenceTrajectory3D
+        RefTraj ReferenceTrajectory3D = ReferenceTrajectory3D("Lemniscate")
         RefTrajTS timeseries
         DisturbanceTS timeseries
         
@@ -25,7 +25,13 @@ classdef QuadRotorSystem < handle
     end
     
     properties
+        Nx double
+        Ny double
+        Nu double
+
         K_lqr double
+        K_lqi double
+        K_sat double % Integrator Anti-Windup Gain
         SysSteadyState double
         EnableStop logical = true
         
@@ -41,6 +47,7 @@ classdef QuadRotorSystem < handle
     methods
         function obj = QuadRotorSystem(QR)
             obj.QR = QR;
+            obj.init();
         end
         
         function init(obj)
@@ -50,21 +57,14 @@ classdef QuadRotorSystem < handle
             makeSimulinkModel(obj.QR.BM, obj.Name);
             makeSimulinkModel(obj.QR.PT.Model, obj.Name);
             obj.setSimOutDesc();
-            
-            obj.RefTraj = ReferenceTrajectory3D();
-            obj.RefTraj.Lemniscate('a',10, 'PotatoChipHeight', 2);
-            obj.RefTraj.init();
-            obj.RefTraj.Speed = 5;
-            obj.RefTraj.Cycles = 1;
-            obj.RefTraj.setTimeSeries();
-            
+
             obj.setLQR();
             
             obj.EnableStop = true;
             sys_time = 2*obj.QR.FlightTime; % Maximum simulation time. Stop System block handles convergence or battery draining
             set_param(obj.Name, 'StopTime', num2str(sys_time));
         end
-        
+    
         function ts = get.RefTrajTS(obj)
             ts = obj.RefTraj.TimeSeries;
         end
@@ -74,17 +74,20 @@ classdef QuadRotorSystem < handle
             obj.setLQR();
             sys_time = 2*obj.QR.FlightTime; % Maximum simulation time. Stop System block handles convergence or battery draining
             set_param(obj.Name, 'StopTime', num2str(sys_time));
+            obj.Simulate('Timeout',10);
         end
         
         function qrso = Simulate(obj, opts)
             arguments
                 obj
                 opts.Mode string = "Nonlinear"
+                opts.Timeout double = inf
+                opts.CaptureErrors string = "on"
             end
             
             obj.Variant = opts.Mode;
             
-            simOut = sim(obj.Name);
+            simOut = sim(obj.Name, "Timeout", opts.Timeout, 'CaptureErrors', opts.CaptureErrors);
             qrso = QRSimOut(simOut, obj.SimOutDesc);
             
             switch opts.Mode
@@ -98,7 +101,7 @@ classdef QuadRotorSystem < handle
         function ax = plot(obj, so, pltopts)
             arguments
                 obj
-                so = obj.SimOut
+                so QRSimOut = obj.SimOut
                 pltopts cell = {}
             end
             y = get(so.Data.yout, 'y_out').Values.Data;
@@ -120,16 +123,23 @@ classdef QuadRotorSystem < handle
             if nargin == 1
                 so = obj.SimOut;
             end
-            t = so.tout;
-            y = get(so.yout, 'y_out').Values.Data;
+            t = so.Data.tout;
+            y = get(so.Data.yout, 'y_out').Values.Data;
             ax = obj.QR.BM.animate(t,y, 'RefTraj', obj.RefTraj);
         end
         
         function setLQR(obj, rho)
             arguments
                 obj
-                rho (1,1) double = 1
+                rho (1,1) double = 0.1
             end
+            q_omega = 0;
+            q_p = .01;
+            q_v = .01;
+            q_phi = 1;
+            q_b_omega = 1;
+            q_I = 10;
+            k_sat = 0.01;
             
             %% PowerTrain Model
             PT = obj.QR.PT.getFirstOrderSS(obj.QR.SS_QAve);
@@ -144,22 +154,52 @@ classdef QuadRotorSystem < handle
             d_ss = zeros(3,1);
             [Ab,Bb,~,Cb,Db,~] = CalcMatrices(obj.QR.BM.LinearModel,x_ss,u_ss,d_ss);
             obj.SysSteadyState = [u_ss;x_ss];
-            
             BM = ss(Ab,Bb,Cb,Db);
             BM.InputName = {'W'};
             BM.OutputName = {'y'};
             obj.LinearBodyModel = BM;
             
-            plant = connect(PT,BM, 'u', {'W','y'});
+            comb = connect(PT,BM, 'u', {'W','y'});
+            N_x = size(comb.A,1); % Number of states in combined system; quite messy
+            N_u = size(comb.B,2);
+
+            % Set Output to Position States
+            I_x_p = 4 + obj.QR.BM.I.x.p;
+            N_y = numel(I_x_p);
+            C = zeros(N_y, N_x);
+            for j = 1:N_y
+                C(j,I_x_p(j)) = 1;
+            end
+            D = comb.D(1:size(C,1),:);
+            plant = ss(comb.A, comb.B, C, D);
             obj.LinearPlantModel = plant;
-            
-            Q = eye(size(plant.A,1));
-            Q(1:4,1:4) = 0; % We don't care about the speed state
-            R = rho*eye(size(plant.B,2));
-            
-            N = [0];
+
+            obj.Nx = N_x;
+            obj.Ny = N_y;
+            obj.Nu = N_u;
+
+            %% Weighting Matrices
+            Q_omega = q_omega*eye(4,4);
+            Q_p = q_p*eye(3,3);
+            Q_v = q_v*eye(3,3);
+            Q_phi = q_phi*eye(3,3);
+            Q_b_omega = q_b_omega*eye(3,3);
+
+            %% LQR
+            Q = blkdiag(Q_omega, Q_p, Q_v, Q_phi, Q_b_omega);
+            R = rho*eye(N_u);
+            N = zeros(N_x, N_u);
             
             obj.K_lqr = lqr(plant,Q,R,N);
+
+            %% LQI - Track Position Reference
+            Q_I = q_I*eye(3);
+            Q = blkdiag(Q,Q_I);
+
+            obj.K_lqi = lqi(plant,Q,R);
+
+            %% Integrator Anti-Windup
+            obj.K_sat = k_sat.*ones(3, 4);
         end
         
         function plotTrackingError(obj)
@@ -201,14 +241,21 @@ classdef QuadRotorSystem < handle
                 so = obj.SimOut;
             end
             
-            so = so.Data;
-            t = so.tout;
-            target_trans = get(so.yout, 'r_out').Values.Data;
-            trans = get(so.yout, 'y_out').Values.Data(:, obj.QR.BM.I.x.p);
-            
-            err = target_trans - trans;
-            norm_err = vecnorm(err, 2, 2);
-            cum_err = trapz(t,norm_err);
+            if isValid(so)
+                so = so.Data;
+                t = so.tout;
+                target_trans = get(so.yout, 'r_out').Values.Data;
+                trans = get(so.yout, 'y_out').Values.Data(:, obj.QR.BM.I.x.p);
+                
+                err = target_trans - trans;
+                norm_err = vecnorm(err, 2, 2);
+                cum_err = trapz(t,norm_err);
+            else
+                cum_err = NaN;
+                t = NaN;
+                norm_err = NaN;
+                err = NaN;
+            end
         end
         
         function set.Variant(obj, mde)
@@ -232,6 +279,12 @@ classdef QuadRotorSystem < handle
             assert(ismember(mde, ["TimeSeries", "Constant", "Zeros"]));
             obj.RefTrajVar = mde;
             set_param([obj.Name '/RefTrajVar'],'LabelModeActiveChoice', mde)
+        end
+
+        function Am = getClosedLoopMatrix(obj,K)
+            A = obj.LinearPlantModel.A;
+            B = obj.LinearPlantModel.B;
+            Am = (A - B*K);
         end
     end
     

@@ -19,6 +19,9 @@ classdef Function < handle & matlab.mixin.Heterogeneous
     
     % Methods to be Overriden by Subclasses
     methods 
+        function obj = Function(varargin)
+            obj = my_inputparser(obj, varargin{:});
+        end
         function f = val2f(obj, v)
             f = v;
         end
@@ -53,6 +56,10 @@ classdef Function < handle & matlab.mixin.Heterogeneous
         
         function v = v(obj_array, varargin)
             v = arrayfun(@(obj) obj.Value(varargin{:}), obj_array);
+        end
+        
+        function i = isdynamic(obj)
+            i = isa(obj, "OptiFunctions.Parents.QRS_Function");
         end
     end
 end

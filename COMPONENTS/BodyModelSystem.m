@@ -33,25 +33,29 @@ classdef BodyModelSystem < handle
             sim_h = makeSimulinkModel(obj.BM, obj.Name);
             obj.Wks = get_param(sim_h, 'ModelWorkspace');
             
-            obj.RefTraj = ReferenceTrajectory3D();
-            obj.RefTraj.Speed = 1;
-            obj.RefTraj.Lemniscate('a',10, 'PotatoChipHeight', 2);
-            obj.RefTraj.init();
+            if isempty(obj.RefTraj)
+                obj.RefTraj = ReferenceTrajectory3D();
+                obj.RefTraj.Speed = 1;
+                obj.RefTraj.Lemniscate('a',10, 'PotatoChipHeight', 2);
+                obj.RefTraj.init();
+            end
             obj.setRefTraj();
             
             obj.x_ss = zeros(12,1);
-            obj.u_ss = obj.BM.calcSteadyStateInput(obj.x_ss, [], repmat(580,4,1));
+            d_ss = zeros(3,1);
+            obj.u_ss = obj.BM.calcSteadyStateInput(obj.x_ss, d_ss, repmat(580,4,1));
             
             setLowPass(obj);
             setLQR(obj);
             setP_des(obj);
         end
         
-        function [t,y,r] = Simulate(obj)
+        function [t,y,r,u] = Simulate(obj)
             simOut = sim(obj.Name);
             t = simOut.tout;
             y = get(simOut.yout, 'y_out').Values.Data;
             r = get(simOut.yout, 'r_out').Values.Data;
+            u = get(simOut.yout, 'u_out').Values.Data;
         end
         
         function ax = plot(obj, varargin)
@@ -62,17 +66,11 @@ classdef BodyModelSystem < handle
             ax = obj.BM.animate(varargin{:}, 'RefTraj', obj.RefTraj);
         end
         
-        function setRefTraj(obj, opts)
+        function setRefTraj(obj)
             arguments
                 obj
-                opts.Speed double = []
-                opts.Cycles double = 1
             end
-            
-            if opts.Speed
-                obj.RefTraj.Speed = opts.Speed;
-            end
-            ts = obj.RefTraj.setTimeSeries(opts.Cycles);
+            ts = obj.RefTraj.setTimeSeries();
             assignin(obj.Wks, 'ref_traj', ts);
         end
         
@@ -91,10 +89,11 @@ classdef BodyModelSystem < handle
         function setLQR(obj, rho)
             arguments 
                 obj
-                rho (1,1) double = 0.01
+                rho (1,1) double = 0.0001
             end
             
-            [A,B] = CalcMatrices(obj.LM,obj.x_ss,obj.u_ss,[]);
+            d_ss = zeros(3,1);
+            [A,B] = CalcMatrices(obj.LM,obj.x_ss,obj.u_ss,d_ss);
             
             Q = eye(obj.BM.Nx);
             R = rho*eye(obj.BM.Nu);

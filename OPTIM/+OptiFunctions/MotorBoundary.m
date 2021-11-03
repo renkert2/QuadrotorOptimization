@@ -1,12 +1,13 @@
-classdef MotorBoundary < OptiFunctions.Parents.Function
+classdef MotorBoundary < OptiFunctions.Parents.QR_Function
     methods
-        function obj = MotorBoundary()
+        function obj = MotorBoundary(qr)
+            obj = obj@OptiFunctions.Parents.QR_Function(qr);
             obj.Sym = "B_M";
             obj.Unit = "unit";
         end
         
-        function v = Value(obj, QR)
-            mot = QR.PT.Motor;
+        function v = Value(obj)
+            mot = obj.QR.PT.Motor;
             v = distToBoundary(mot.Fit.Boundary, [mot.Fit.Inputs.Value]');
         end
         

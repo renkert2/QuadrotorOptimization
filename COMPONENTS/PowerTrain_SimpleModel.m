@@ -147,6 +147,9 @@ classdef PowerTrain_SimpleModel < Model
             if exit_flag <= 0
                 error('No solution found');
             end
+
+            % You cant just assume that the valid solution is the first
+            % one.  Requires some sort of check.  
             if obj.ConstrainInput
                 if x_sol(1) > 1
                     error('No valid solution.  Required input exceeds 1');

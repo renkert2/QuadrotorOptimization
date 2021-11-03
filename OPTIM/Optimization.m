@@ -1,14 +1,16 @@
 classdef Optimization < handle      
     properties
-        QR QuadRotor 
+        QRS % QuadRotor or QuadRotorSystem
+        
         OptiVars (:,1) optiVar
         DependentParams (:,1) compParam
         
-        Objective OptiFunctions.Parents.Function = OptiFunctions.FlightTimePerPrice();
-        Constraints OptiFunctions.Parents.Function = [OptiFunctions.BatteryBoundary; OptiFunctions.MotorBoundary; OptiFunctions.PropellerBoundary; OptiFunctions.InputConstraint]        
+        Objective OptiFunctions.Parents.Function
+        Constraints OptiFunctions.Parents.Function
     end
     
     properties (Dependent)
+        QR QuadRotor
         CD ComponentData % ComponentDatabase 
     end
     
@@ -18,12 +20,32 @@ classdef Optimization < handle
     end
     
     methods
-        function obj = Optimization(qr)
-            obj.QR = qr;
+        function obj = Optimization(qrs)
+            obj.QRS = qrs;
             obj.init();
         end
         
+        function set.QRS(obj, qrs)
+            assert(isa(qrs,"QuadRotorSystem") || isa(qrs,"QuadRotor"),...
+                "QRS Property must be a QuadRotor or a QuadRotorSystem");
+            obj.QRS = qrs;
+        end
+        
+        function qr = get.QR(obj)
+           % Implemented for Backwards Compatibility with existing code
+           if isa(obj.QRS, "QuadRotorSystem")
+               qr = obj.QRS.QR;
+           elseif isa(obj.QRS, "QuadRotor")
+               qr = obj.QRS;
+           end
+        end
+        
         function init(obj)
+            % Initialize Constraints and Objectives
+            obj.Objective = OptiFunctions.FlightTimePerPrice(obj.QR);
+            obj.setDefaultConstraints();
+            
+            
             batt = obj.QR.PT.Battery;
             prop = obj.QR.PT.Propeller;
             motor = obj.QR.PT.Motor;
@@ -55,6 +77,27 @@ classdef Optimization < handle
             storeDependentDefault(obj.DependentParams);
         end
         
+        function setDefaultConstraints(obj)      
+            obj.Constraints = [...
+                % Boundary Constraints
+                OptiFunctions.BatteryBoundary(obj.QR);...
+                OptiFunctions.MotorBoundary(obj.QR);...
+                OptiFunctions.PropellerBoundary(obj.QR);...
+                
+                % Steady-State Input Constraint
+                OptiFunctions.InputConstraint(obj.QR);...
+                
+                % Current Constraints - Lower Bound on Current Margin
+                OptiFunctions.BatteryCurrentConstraint(obj.QR, 'LB', 0);...
+                OptiFunctions.InverterCurrentConstraint(obj.QR, 'LB', 0)
+                ];
+            if isdynamic(obj.Objective)
+                batt = obj.QR.PT.Battery;
+                soc_con = OptiFunctions.FinalSOC(obj.QRS, 'LB', batt.OperatingSOCRange(1));
+                obj.Constraints = vertcat(obj.Constraints, soc_con);
+            end
+        end
+        
         function cd = get.CD(obj)
             qr = obj.QR;
             bcd = qr.PT.Battery.Surrogate.FilteredCD;
@@ -71,7 +114,7 @@ classdef Optimization < handle
                 counter.increment("objfun");
             end
             if success_flag
-                f_ = f(getEnabled(obj.Objective), obj.QR);
+                f_ = f(getEnabled(obj.Objective));
             else
                 f_ = NaN;
             end
@@ -86,7 +129,7 @@ classdef Optimization < handle
                 counter.increment("nlcon");
             end
             if success_flag
-                c = g(getEnabled(obj.Constraints), obj.QR);
+                c = g(getEnabled(obj.Constraints));
             else
                 c = NaN(size(getEnabled(obj.Constraints)));
             end
@@ -104,7 +147,7 @@ classdef Optimization < handle
             if nargin == 3
                 counter.increment("update");
             end
-            obj.QR.update();
+            obj.QRS.update();
         end
         
         function resetQR(obj)
@@ -273,11 +316,18 @@ classdef Optimization < handle
                 opts.PlotDesignSpace logical = true
                 opts.PlotGradient logical = false
                 opts.DesignSpaceParent DesignSpacePlot = DesignSpacePlot.empty()
+                opts.SimulationDiffMinChange double = 1e-3 % Minimum change in variables for finite differencing; only applied for Simulation-based objectives
             end
             counter = opts.Counter;
             
             OO = OptimOutput();
-            OO.F0 = obj.Objective.Value(obj.QR);
+            try
+                OO.F0 = obj.Objective.Value();
+            catch
+                warning("Updating QRS to evaluate initial point")
+                obj.updateQR(false);
+                OO.F0 = obj.Objective.Value();
+            end
             
             % Switch into Continuous Mode
             setDependent(obj.DependentParams, true);
@@ -287,6 +337,13 @@ classdef Optimization < handle
             switch opts.SolverFunction
                 case "fmincon"
                     optimopts = optimoptions(optimopts, 'Algorithm', 'sqp');
+                    
+                    % Options for Simulation-Based Optimization
+                    if isdynamic(obj.Objective) % Test to see if objective is simulation-based.  This is weak-sauce coding
+                        optimopts = optimoptions(optimopts, 'DiffMinChange', opts.SimulationDiffMinChange);
+                    end
+                    
+                    % Options for Custom Output
                     if opts.OptimizationOutput
                         optimopts = optimoptions(optimopts, 'Display', 'iter-detailed', 'PlotFcn', {@optimplotfval,@optimplotfirstorderopt});
                         out_plts = {};
@@ -497,7 +554,7 @@ classdef Optimization < handle
                 obj
                 opts.Function = getEnabled(obj.Objective)
                 opts.Vars = obj.OptiVars(isEnabled(obj.OptiVars))
-                opts.FiniteDifferenceStepSize = sqrt(eps)
+                opts.FiniteDifferenceStepSize = 1e-3
                 opts.HessianStepFactor = 3
                 opts.ScaleFunction = true
             end
@@ -528,7 +585,7 @@ classdef Optimization < handle
             
             function [grad, grad_s, f] = calcGradient()             
                 delta = v.*x;
-                f = F.f(obj.QR);
+                f = F.f();
                 grad = zeros(N,1);
                 for i = 1:N
                     var = vars(i);
@@ -537,7 +594,7 @@ classdef Optimization < handle
                     var.Value = var.Value + delta(i);
                     obj.updateQR(false);
                     
-                    f_step = F.f(obj.QR);
+                    f_step = F.f();
                     grad(i) = (f_step - f)/delta(i);
                     
                     var.Value = val_cache;
@@ -633,7 +690,7 @@ classdef Optimization < handle
                 cd = obj.CD;
             end
             
-            F0 = obj.Objective.Value(obj.QR);
+            F0 = obj.Objective.Value();
             
             if opts.SortMode == "Distance" || opts.SortMode == "Objective"
                 [cd_cell,d,comp_names] = filterNearest(cd, target, N_max_search, 'DistanceMode', opts.DistanceMode, 'Weights', opts.Weights);
@@ -940,7 +997,7 @@ classdef Optimization < handle
             end
             counter = opts.Counter;
             gao = GAOutput();
-            gao.F0 = obj.Objective.Value(obj.QR);
+            gao.F0 = obj.Objective.Value();
             
             opti_var_vals = getValues(filterEnabled(obj.OptiVars, "Child"));
             if opts.EnforceBounds

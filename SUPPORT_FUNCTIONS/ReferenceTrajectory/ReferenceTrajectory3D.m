@@ -4,10 +4,12 @@ classdef ReferenceTrajectory3D < handle
     properties
         Speed double
         Cycles double
+        delta_S double = 0.1 % Arc Length step size
     end
     
     properties (SetAccess = private)
         Type string
+        Reparameterize logical = true % Option to reparameterize curve to get constant speed
         
         % Parametrized by u
         Period double
@@ -18,29 +20,57 @@ classdef ReferenceTrajectory3D < handle
         dx function_handle
         dy function_handle
         dz function_handle
-        
+
         % Parametrized by Arc Length
+        
         s double
         x_s double
         y_s double
         z_s double
-        
+
         % Parametrized by Time
+        delta_T double 
         t double
+        R_Data double
         TimeSeries timeseries
         
+        % Velocity
+        VelTimeSeries timeseries
+        dR_Data double
+
+        % Accelerations
+        AccelTimeSeries timeseries
+        ddR_Data double
+
     end
     
     methods
         function obj = ReferenceTrajectory3D(traj)
             if nargin
+                if isa(traj, "char")
+                    traj = string(traj);
+                end
                 if isa(traj, "string")
                     switch traj
+                        case "Step"
+                            obj.Step('FinalPosition',[0 0 1]);
+                            obj.init();
+                            obj.Speed = 5;
+                            obj.Cycles = 1;
                         case "Lemniscate"
-                        case "AsymetricLemniscate"
+                            obj.Lemniscate('a',10, 'PotatoChipHeight', 2);
+                            obj.init();
+                            obj.Speed = 5;
+                            obj.Cycles = 1;
+                        case "Sigmoid"
+                            obj.Sigmoid();
+                            obj.init();
+                            obj.Speed = 1;
+                            obj.Cycles = 1;
                     end
                 end
                 init(obj);
+                obj.setTimeSeries();
             end
         end
         
@@ -76,12 +106,27 @@ classdef ReferenceTrajectory3D < handle
     end
     
     methods
+        function Step(obj, opts)
+            arguments
+                obj
+                opts.FinalPosition double = [0 0 1]
+            end
+            obj.Type = 'Step';
+
+            xf = opts.FinalPosition;
+            x = @(u) u*xf(1);
+            y = @(u) u*xf(2);
+            z = @(u) u*xf(3);
+            setXYZ(obj, x, y, z);
+            obj.Period = 1;
+            obj.Reparameterize = true;
+        end
         function Lemniscate(obj, opts)
             arguments
                 obj
-                opts.a = 1
+                opts.a = 10
                 opts.HeightOffset = 0
-                opts.PotatoChipHeight = 0
+                opts.PotatoChipHeight = 2
             end
             
             obj.Type = "Lemniscate";
@@ -95,11 +140,48 @@ classdef ReferenceTrajectory3D < handle
             setXYZ(obj,x,y,z);
             
             obj.Period = 2*pi;
+            obj.Reparameterize = true;
+        end
+        function Sigmoid(obj, opts)
+           arguments
+               obj
+               opts.FinalPosition = [0 0 1]
+               opts.Offset = 10
+               opts.MaxVelocity double {mustBePositive} = 1
+           end
+           obj.Type = "Sigmoid";
+           
+           % Calculate alpha from max velocity, derived in
+           % ./Development/SigmoidStepFunction.mlx
+           alpha = 4*opts.MaxVelocity / norm(opts.FinalPosition);
+           
+           S = @(x) 1./(1+exp(-alpha.*(x - opts.Offset)));
+           X_f = opts.FinalPosition;
+           
+           x = @(u) X_f(1)*S(u);
+           y = @(u) X_f(2)*S(u);
+           z = @(u) X_f(3)*S(u);
+           setXYZ(obj, x, y, z);
+           
+           obj.Period = 2*opts.Offset;
+           obj.Reparameterize = false;
         end
         
         function init(obj)
             setDerivatives(obj);
             setInterpolation(obj);
+        end
+        
+        function set.delta_S(obj, val)
+            obj.delta_S = val;
+            if ~isempty(obj.TimeSeries)
+                setInterpolation(obj);
+                setTimeSeries(obj);
+            end
+        end
+        
+        function delta_T = get.delta_T(obj)
+            delta_T = obj.delta_S/obj.Speed;
         end
 
         function ts = setTimeSeries(obj)
@@ -108,7 +190,7 @@ classdef ReferenceTrajectory3D < handle
             end
             cycles = obj.Cycles;
             t_single = obj.s/obj.Speed;
-            delta = mean(diff(t_single));
+            delta = obj.delta_T;
             t = t_single;
             for i = 2:cycles
                 t_last = t(end);
@@ -116,10 +198,22 @@ classdef ReferenceTrajectory3D < handle
             end
 
             data = repmat([obj.x_s; obj.y_s; obj.z_s], [1 cycles]);
-            
+
             ts = timeseries(data, t);
             obj.t = t;
+            obj.R_Data = data;
             obj.TimeSeries = ts;
+            
+            vel_data = [diff(data, 1, 2)./diff(t)];
+            vel_data = [vel_data, vel_data(:, end)];
+            obj.dR_Data = vel_data;
+            obj.VelTimeSeries = timeseries(vel_data, t);
+            
+            accel_data = [diff(vel_data, 1, 2)./diff(t)];
+            accel_data = [accel_data, accel_data(:, end)];
+            
+            obj.ddR_Data = accel_data;
+            obj.AccelTimeSeries = timeseries(accel_data, t);
         end
         
         function setXYZ(obj,x,y,z)
@@ -138,17 +232,24 @@ classdef ReferenceTrajectory3D < handle
             obj.dz = obj.makeMatlabFunction(dr(3), u);
         end
         
-        function setInterpolation(obj, res)
+        function setInterpolation(obj)
             arguments
                 obj
-                res double = 0.1
             end
             
-            obj.s = 0:res:arcLength(obj,0,obj.Period);
-            r_points = ArcLengthParametrization(obj, obj.s);
-            obj.x_s = r_points(1,:);
-            obj.y_s = r_points(2,:);
-            obj.z_s = r_points(3,:);
+            if obj.Reparameterize
+                obj.s = 0:obj.delta_S:arcLength(obj,0,obj.Period);
+                [r_points] = ArcLengthParametrization(obj, obj.s);
+                obj.x_s = r_points(1,:);
+                obj.y_s = r_points(2,:);
+                obj.z_s = r_points(3,:);
+            else
+                obj.s = 0:obj.delta_S:obj.Period;
+                r_points = obj.R(obj.s);
+                obj.x_s = r_points(1,:);
+                obj.y_s = r_points(2,:);
+                obj.z_s = r_points(3,:);
+            end
         end
         
         function [r,x,y,z] = R_s(obj,s_query)
@@ -208,6 +309,10 @@ classdef ReferenceTrajectory3D < handle
             else
                 f = matlabFunction(sym, 'Vars', var);
             end
+        end
+
+        function d = permuteTSData(tsdata)
+            d = permute(tsdata,[3 1 2]);
         end
     end
 end

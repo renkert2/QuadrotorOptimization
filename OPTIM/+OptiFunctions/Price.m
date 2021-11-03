@@ -1,11 +1,12 @@
-classdef Price < OptiFunctions.Parents.Function
+classdef Price < OptiFunctions.Parents.QR_Function
     methods
-        function obj = Price()
+        function obj = Price(qr)
+            obj = obj@OptiFunctions.Parents.QR_Function(qr);
             obj.Sym = "P";
             obj.Unit = "USD";
         end
-        function v = Value(obj, QR)
-            v = QR.Price.Value;
+        function v = Value(obj)
+            v = obj.QR.Price.Value;
         end
         function f = val2f(obj, v)
             f = v;
