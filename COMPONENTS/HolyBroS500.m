@@ -3,7 +3,12 @@ classdef HolyBroS500 < QuadRotor
         %% HolyBro S500
         % https://shop.holybro.com/s500-v2-kitmotor2216-880kv-propeller1045_p1153.html
         
-        function obj = HolyBroS500()            
+        function obj = HolyBroS500(opts)
+            arguments
+                opts.TunableVOCVnom = false
+                opts.VariableVOCV = true
+            end
+                
             %% Frame
             % The frame will contain all mass not including the battery, motors, and propellers.
             
@@ -51,7 +56,9 @@ classdef HolyBroS500 < QuadRotor
                 'N_s', compParam('N_s',4, 'Unit', 'unit', 'AutoRename', true, 'Tunable', true),... % 4000mAh, No Dynamics
                 'R_s', compParam('R_s', .004, 'Unit', "Ohm", 'AutoRename', true, 'Tunable', true),... % Measured with Battery Charger, likely not very accurate.  R_s = N_p/N_s R_p
                 'Mass', extrinsicProp('Mass', 0.47735, 'Unit',"kg", 'AutoRename', true, 'Tunable', true),...
-                'Price', extrinsicProp('Price', 59.99, 'Unit', "USD", 'AutoRename', true, 'Tunable', false));
+                'Price', extrinsicProp('Price', 59.99, 'Unit', "USD", 'AutoRename', true, 'Tunable', false),...
+                'V_OCV_nominal', compParam('V_OCV_nom', 3.7, 'Unit', 'V', 'AutoRename', true, 'Tunable', opts.TunableVOCVnom),...
+                'variableV_OCV', opts.VariableVOCV);
             batt.OperatingSOCRange = [0.2 1];
             
             %% DC Bus

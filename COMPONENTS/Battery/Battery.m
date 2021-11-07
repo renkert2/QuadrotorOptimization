@@ -11,7 +11,8 @@ classdef Battery < Component
         N_s compParam = compParam('N_s', 3, 'Unit', "unit") % Number of cells in series
         Q compParam = compParam('Q', 4000, 'Unit', "mAh") % mAh
         C compParam = compParam('C', 75, 'Unit', "A/Ah", 'Description', "Constant Discharge Rating") % C-Rating: I = C(1/hr) * Q(Ah) = A
-    
+        V_OCV_nominal compParam = compParam('V_OCV_nom', 3.7, 'Unit', 'V') %Nominal Open Circuit Voltage = V_OCV_nominal*V_OCV_curve(q)
+        
         % Dependent Params - Dependency set in init()
         R_s compParam = compParam('R_s', (10e-3) / 3, 'Unit', "Ohm") % Series Resistance - Ohms - From Turnigy Website
         Mass compParam = extrinsicProp("Mass", NaN, 'Unit', "kg"); % Dependent param defined in init
@@ -19,7 +20,6 @@ classdef Battery < Component
         
         OperatingSOCRange double = [0 1]
         variableV_OCV logical = true
-        V_OCV_nominal double = 3.7 %Nominal Open Circuit Voltage = V_OCV_nominal*V_OCV_curve(q)
         V_OCV_curve = symfun(1, sym('q')) % Protected in set method
     end
     
@@ -133,7 +133,7 @@ classdef Battery < Component
             obj.DischargeCurrent.Dependent = true;
             
             V_pack_sym = obj.N_s.*obj.V_OCV_nominal.*obj.V_OCV_curve;
-            obj.V_OCV_pack = matlabFunction([obj.N_s], V_pack_sym, {sym('q')});
+            obj.V_OCV_pack = matlabFunction([obj.N_s, obj.V_OCV_nominal], V_pack_sym, {sym('q')});
             
             calcAveraged_SOC(obj);
         end

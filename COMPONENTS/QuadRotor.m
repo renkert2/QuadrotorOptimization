@@ -46,7 +46,6 @@ classdef QuadRotor < System
         function obj = QuadRotor(p)
             arguments
                 p.Frame Frame = Frame('Name', "Frame");
-                
                 p.Battery Battery = Battery('Name', "Battery");
                 p.DCBus DCBus_CurrentEquivalence = DCBus_CurrentEquivalence('Name', 'Bus', 'N_inputs',1,'N_outputs',4);
                 p.PMSMInverter PMSMInverter = PMSMInverter('Name', "Inverter");
