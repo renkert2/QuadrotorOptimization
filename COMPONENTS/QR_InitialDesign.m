@@ -43,7 +43,6 @@ classdef QR_InitialDesign < HolyBroS500
                 qr.PT.Propeller.k_P_mod.Value = 1.25;
                 qr.PT.Propeller.k_T_mod.Value = 0.85;
             end
-            
         end
     end
 end
