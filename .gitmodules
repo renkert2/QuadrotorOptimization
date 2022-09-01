@@ -1,3 +1,6 @@
 [submodule "SUPPORT_FUNCTIONS/physical-units-for-matlab"]
 	path = SUPPORT_FUNCTIONS/physical-units-for-matlab
 	url = https://github.com/sky-s/physical-units-for-matlab.git
+[submodule "GraphTools_Phil_V1"]
+	path = GraphTools_Phil_V1
+	url = https://github.com/renkert2/GraphTools_Phil_V1.git
