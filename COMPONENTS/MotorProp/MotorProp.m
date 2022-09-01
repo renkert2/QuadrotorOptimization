@@ -38,7 +38,17 @@ classdef MotorProp < System
             Motor = obj.Components(1);
             Prop = obj.Components(2);
             
-            V = copy(Motor.Graph.Vertices);
+            V_temp = copy(Motor.Graph.Vertices);
+            V_temp_desc = [V_temp.Description];
+            
+            % Order Graph Vertices may change depending on which states are
+            % algebraic.  We want to force this order so that assign the
+            % correct head/tail vertices to the edges.  
+            V_desc = ["Inductance (i_q)", "Inertia (omega_m)", "Input Voltage (v_q)", "Mechanical Load (T_l)", "Heat Sink"];
+            for i = 1:numel(V_desc)
+                V(i) = V_temp(V_temp_desc == V_desc(i));
+            end
+                
             E = copy(Motor.Graph.Edges);
             E(1).TailVertex = V(3); E(1).HeadVertex = V(1); % Edge TailVertices and HeadVertices must be reassigned
             E(2).TailVertex = V(1); E(2).HeadVertex = V(2);

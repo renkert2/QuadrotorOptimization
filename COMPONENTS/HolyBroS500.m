@@ -3,7 +3,12 @@ classdef HolyBroS500 < QuadRotor
         %% HolyBro S500
         % https://shop.holybro.com/s500-v2-kitmotor2216-880kv-propeller1045_p1153.html
         
-        function obj = HolyBroS500()            
+        function obj = HolyBroS500(opts)
+            arguments
+                opts.TunableVOCVnom = false
+                opts.VariableVOCV = true
+            end
+                
             %% Frame
             % The frame will contain all mass not including the battery, motors, and propellers.
             
@@ -46,12 +51,14 @@ classdef HolyBroS500 < QuadRotor
             %% Battery
             % - Recommended: 4S, 5000 mAh.  Used 4s,4000mAh
             batt = Battery('Name', 'Battery',...
-                'Q', compParam('Q',4000,'Unit', 'mAh', 'AutoRename', true, 'Tunable', true),...
-                'N_p', compParam('N_p',1,'Unit', 'unit', 'AutoRename', true, 'Tunable', true),...
-                'N_s', compParam('N_s',4, 'Unit', 'unit', 'AutoRename', true, 'Tunable', true),... % 4000mAh, No Dynamics
-                'R_s', compParam('R_s', .004, 'Unit', "Ohm", 'AutoRename', true, 'Tunable', true),... % Measured with Battery Charger, likely not very accurate.  R_s = N_p/N_s R_p
-                'Mass', extrinsicProp('Mass', 0.47735, 'Unit',"kg", 'AutoRename', true, 'Tunable', true),...
-                'Price', extrinsicProp('Price', 59.99, 'Unit', "USD", 'AutoRename', true, 'Tunable', false));
+                'Q', compParam('Q',4000,'Unit', 'mAh', 'Description', 'Capacity', 'AutoRename', true, 'Tunable', true),...
+                'N_p', compParam('N_p',1,'Unit', 'unit', 'Description', 'Parallel Cells', 'AutoRename', true, 'Tunable', true),...
+                'N_s', compParam('N_s',4, 'Unit', 'unit', 'Description', 'Series Cells', 'AutoRename', true, 'Tunable', true),... % 4000mAh, No Dynamics
+                'R_s', compParam('R_s', .004, 'Unit', "Ohm", 'Description', 'Cell Series Resistance', 'AutoRename', true, 'Tunable', true),... % Measured with Battery Charger, likely not very accurate.  R_s = N_p/N_s R_p
+                'Mass', extrinsicProp('Mass', 0.47735, 'Unit',"kg", 'Description', 'Mass', 'AutoRename', true, 'Tunable', true),...
+                'Price', extrinsicProp('Price', 59.99, 'Unit', "USD", 'Description', 'Price', 'AutoRename', true, 'Tunable', false),...
+                'V_OCV_nominal', compParam('V_OCV_nom', 3.7, 'Unit', 'V', 'AutoRename', true, 'Tunable', opts.TunableVOCVnom),...
+                'variableV_OCV', opts.VariableVOCV);
             batt.OperatingSOCRange = [0.2 1];
             
             %% DC Bus
@@ -69,12 +76,12 @@ classdef HolyBroS500 < QuadRotor
             
             %% Motor
             motor = PMSMMotor('Name','Motor',...
-                'Mass', extrinsicProp('Mass',0.0656, 'AutoRename', true, 'Tunable', true, 'Unit', "kg"),... % Measured mass
+                'Mass', extrinsicProp('Mass',0.0656, 'AutoRename', true, 'Tunable', true, 'Unit', "kg", 'Description', 'Mass'),... % Measured mass
                 'J', compParam('J', NaN, 'AutoRename', true, 'Tunable', true, 'Unit', "kg*m^2"),...
-                'D', compParam('D', 0.03, 'AutoRename', true, 'Tunable', true, 'Unit', "m"),... % Need to measure this
-                'kV', compParam('kV', 880, 'AutoRename', true, 'Tunable', true, 'Unit', "RPM/V"),...
-                'Rm', compParam('Rm',0.108, 'AutoRename', true, 'Tunable', true, 'Unit', "Ohm"),... % Estimate https://www.rcmoment.com/p-rm6909.html
-                'Price', extrinsicProp('Price', 19.90, 'Unit', "USD", 'AutoRename', true, 'Tunable', false));
+                'D', compParam('D', 0.03, 'AutoRename', true, 'Tunable', true, 'Unit', "m", 'Description', 'Diameter'),... % Need to measure this
+                'kV', compParam('kV', 880, 'AutoRename', true, 'Tunable', true, 'Unit', "RPM/V", 'Description','Speed Constant'),...
+                'Rm', compParam('Rm',0.108, 'AutoRename', true, 'Tunable', true, 'Unit', "Ohm", 'Description', 'Wind Resistance'),... % Estimate https://www.rcmoment.com/p-rm6909.html
+                'Price', extrinsicProp('Price', 19.90, 'Unit', "USD", 'Description', 'Price', 'AutoRename', true, 'Tunable', false));
             motor.J.Dependent = true; % Use the estimate function from PMSMMotor since we don't know the actual value
             %motor.kV.Value = 785; % Tuned from experimental values
             
@@ -83,15 +90,15 @@ classdef HolyBroS500 < QuadRotor
             P = 4.5*(u.in/u.m);
             
             prop = Propeller('Name', 'Propeller',...
-                'k_P', compParam('k_P',  NaN, 'AutoRename', true, 'Tunable', true) ,... % Power coefficient - k_P = 2*pi*k_Q, speed in rev/s
-                'k_T', compParam('k_T', NaN, 'AutoRename', true, 'Tunable', true),... % Thrust coefficient - N/(s^2*kg*m^2), speed in rev/s.
+                'k_P', compParam('k_P',  NaN, 'Description', 'Power Coeff.', 'AutoRename', true, 'Tunable', true) ,... % Power coefficient - k_P = 2*pi*k_Q, speed in rev/s
+                'k_T', compParam('k_T', NaN, 'Description', 'Thrust Coeff.', 'AutoRename', true, 'Tunable', true),... % Thrust coefficient - N/(s^2*kg*m^2), speed in rev/s.
                 'k_P_mod', compParam('k_P_mod',  NaN, 'AutoRename', true, 'Tunable', true) ,... % Power coefficient modifier
                 'k_T_mod', compParam('k_T_mod', NaN, 'AutoRename', true, 'Tunable', true),... % Thrust coefficient modifier
-                'D', compParam('D', D, 'AutoRename', true, 'Tunable', true, 'Unit', "m"),...
-                'P', compParam('P', P, 'AutoRename', true, 'Tunable', true, 'Unit', "m"),...
-                'Mass', extrinsicProp('Mass', 0.012275, 'AutoRename',true,'Tunable',true, 'Unit', "kg"),...
+                'D', compParam('D', D, 'AutoRename', true, 'Tunable', true, 'Unit', "m", 'Description', 'Diameter'),...
+                'P', compParam('P', P, 'AutoRename', true, 'Tunable', true, 'Unit', "m", 'Description', 'Pitch'),...
+                'Mass', extrinsicProp('Mass', 0.012275, 'AutoRename',true,'Tunable',true, 'Unit', "kg", 'Description', 'Mass'),...
                 'J', compParam('J', NaN, 'AutoRename', true, 'Tunable',true, 'Unit', "kg*m^2"),...
-                'Price', extrinsicProp('Price', 2.475, 'Unit', "USD", 'AutoRename', true, 'Tunable', false));
+                'Price', extrinsicProp('Price', 2.475, 'Unit', "USD", 'Description', 'Price', 'AutoRename', true, 'Tunable', false));
             
             prop.J.Dependent = true; % Use the estimate function from PMSMMotor since we don't know the actual value
             prop = setQRS500AeroCoeffs(prop); % Sets k_P and k_T from experimental data
